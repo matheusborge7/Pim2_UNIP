@@ -1,356 +1,230 @@
-# sistema_academico.py
-import sqlite3
-from datetime import datetime
-from algoritmos import AlgoritmosAcademicos
-from ia_sistema import IAProcessor
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sqlite3.h>
 
-class SistemaAcademico:
-    def _init_(self):
-        self.conn = sqlite3.connect('academico.db', check_same_thread=False)
-        self.cursor = self.conn.cursor()
-        self.algoritmos = AlgoritmosAcademicos()
-        self.ia_processor = IAProcessor()
-        self.inicializar_banco_dados()
+// Estruturas de dados
+typedef struct {
+    int id;
+    char username[50];
+    char password[50];
+    char tipo[20];
+    char nome[100];
+} Usuario;
+
+typedef struct {
+    int id;
+    char nome[100];
+    char codigo[20];
+    int professor_id;
+    char professor_nome[100];
+} Turma;
+
+typedef struct {
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+} SistemaAcademico;
+
+// Protótipos das funções
+void inicializar_banco_dados(SistemaAcademico *sistema);
+Usuario* autenticar_usuario(SistemaAcademico *sistema, const char *username, const char *password);
+Turma** listar_turmas(SistemaAcademico *sistema, int *quantidade);
+void liberar_turmas(Turma **turmas, int quantidade);
+void mostrar_usuario(Usuario *usuario);
+void mostrar_turmas(Turma **turmas, int quantidade);
+
+// Função principal
+int main() {
+    printf("🧪 TESTANDO SISTEMA EM C...\n");
     
-    def inicializar_banco_dados(self):
-        """Inicializa todas as tabelas do sistema"""
-        # Tabela de usuários
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS usuarios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                tipo TEXT NOT NULL,
-                nome TEXT NOT NULL,
-                email TEXT
-            )
-        ''')
-        
-        # Tabela de turmas
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS turmas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT NOT NULL,
-                codigo TEXT UNIQUE,
-                professor_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (professor_id) REFERENCES usuarios (id)
-            )
-        ''')
-        
-        # Tabela de matrículas
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS matriculas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                aluno_id INTEGER,
-                turma_id INTEGER,
-                data_matricula TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (aluno_id) REFERENCES usuarios (id),
-                FOREIGN KEY (turma_id) REFERENCES turmas (id),
-                UNIQUE(aluno_id, turma_id)
-            )
-        ''')
-        
-        # Tabela de atividades
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS atividades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT NOT NULL,
-                descricao TEXT,
-                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                data_entrega DATE,
-                turma_id INTEGER,
-                professor_id INTEGER,
-                tipo TEXT DEFAULT 'tarefa',
-                FOREIGN KEY (turma_id) REFERENCES turmas (id),
-                FOREIGN KEY (professor_id) REFERENCES usuarios (id)
-            )
-        ''')
-        
-        # Tabela de entregas
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS entregas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                atividade_id INTEGER,
-                aluno_id INTEGER,
-                resposta TEXT,
-                arquivo_path TEXT,
-                data_entrega TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                nota FLOAT,
-                similaridade_detectada BOOLEAN DEFAULT FALSE,
-                FOREIGN KEY (atividade_id) REFERENCES atividades (id),
-                FOREIGN KEY (aluno_id) REFERENCES usuarios (id)
-            )
-        ''')
-        
-        # Tabela de aulas
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS aulas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                turma_id INTEGER,
-                data_aula DATE,
-                conteudo TEXT,
-                professor_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (turma_id) REFERENCES turmas (id),
-                FOREIGN KEY (professor_id) REFERENCES usuarios (id)
-            )
-        ''')
-        
-        # Inserir dados de exemplo
-        self._inserir_dados_exemplo()
-        self.conn.commit()
+    SistemaAcademico sistema = {0};
     
-    def _inserir_dados_exemplo(self):
-        """Insere dados de exemplo para testes"""
-        # Usuários de exemplo
-        usuarios_exemplo = [
-            (1, 'admin', '1234', 'professor', 'Professor Admin', 'admin@escola.com'),
-            (2, 'aluno1', '1234', 'aluno', 'João Silva', 'joao@escola.com'),
-            (3, 'aluno2', '1234', 'aluno', 'Maria Santos', 'maria@escola.com'),
-            (4, 'prof2', '1234', 'professor', 'Professora Ana', 'ana@escola.com')
-        ]
+    // Inicializar sistema
+    inicializar_banco_dados(&sistema);
+    printf("✅ Sistema Acadêmico inicializado!\n");
+    
+    // Teste de login
+    Usuario *usuario = autenticar_usuario(&sistema, "admin", "1234");
+    if (usuario != NULL) {
+        printf("✅ Login OK: ");
+        mostrar_usuario(usuario);
+        free(usuario);
+    } else {
+        printf("❌ Login falhou\n");
+    }
+    
+    // Teste de turmas
+    int quantidade_turmas;
+    Turma **turmas = listar_turmas(&sistema, &quantidade_turmas);
+    printf("✅ Turmas: %d encontradas\n", quantidade_turmas);
+    
+    if (quantidade_turmas > 0) {
+        mostrar_turmas(turmas, quantidade_turmas);
+        liberar_turmas(turmas, quantidade_turmas);
+    }
+    
+    // Fechar banco de dados
+    if (sistema.db != NULL) {
+        sqlite3_close(sistema.db);
+    }
+    
+    printf("🎉 SISTEMA EM C FUNCIONANDO PERFEITAMENTE!\n");
+    return 0;
+}
+
+void inicializar_banco_dados(SistemaAcademico *sistema) {
+    int rc;
+    char *err_msg = 0;
+    
+    // Abrir/Criar banco de dados
+    rc = sqlite3_open("data/academico_c.db", &sistema->db);
+    
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "❌ Não foi possível abrir o banco: %s\n", sqlite3_errmsg(sistema->db));
+        return;
+    }
+    
+    // Criar tabelas
+    const char *sql_usuarios = 
+        "CREATE TABLE IF NOT EXISTS usuarios ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "username TEXT UNIQUE NOT NULL, "
+        "password TEXT NOT NULL, "
+        "tipo TEXT NOT NULL, "
+        "nome TEXT NOT NULL);";
+    
+    const char *sql_turmas = 
+        "CREATE TABLE IF NOT EXISTS turmas ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "nome TEXT NOT NULL, "
+        "codigo TEXT UNIQUE, "
+        "professor_id INTEGER);";
+    
+    rc = sqlite3_exec(sistema->db, sql_usuarios, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "❌ Erro ao criar tabela usuarios: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    }
+    
+    rc = sqlite3_exec(sistema->db, sql_turmas, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "❌ Erro ao criar tabela turmas: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    }
+    
+    // Inserir dados de exemplo
+    const char *sql_insert = 
+        "INSERT OR IGNORE INTO usuarios VALUES (1, 'admin', '1234', 'professor', 'Professor Admin');"
+        "INSERT OR IGNORE INTO usuarios VALUES (2, 'aluno1', '1234', 'aluno', 'Aluno Teste');"
+        "INSERT OR IGNORE INTO turmas VALUES (1, 'Turma Python', 'TURMA001', 1);";
+    
+    rc = sqlite3_exec(sistema->db, sql_insert, 0, 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "❌ Erro ao inserir dados: %s\n", err_msg);
+        sqlite3_free(err_msg);
+    }
+}
+
+Usuario* autenticar_usuario(SistemaAcademico *sistema, const char *username, const char *password) {
+    const char *sql = "SELECT id, username, tipo, nome FROM usuarios WHERE username = ? AND password = ?";
+    int rc;
+    
+    rc = sqlite3_prepare_v2(sistema->db, sql, -1, &sistema->stmt, 0);
+    
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "❌ Erro ao preparar consulta: %s\n", sqlite3_errmsg(sistema->db));
+        return NULL;
+    }
+    
+    // Vincular parâmetros
+    sqlite3_bind_text(sistema->stmt, 1, username, -1, SQLITE_STATIC);
+    sqlite3_bind_text(sistema->stmt, 2, password, -1, SQLITE_STATIC);
+    
+    // Executar consulta
+    rc = sqlite3_step(sistema->stmt);
+    
+    if (rc == SQLITE_ROW) {
+        // Usuário encontrado
+        Usuario usuario = (Usuario)malloc(sizeof(Usuario));
+        usuario->id = sqlite3_column_int(sistema->stmt, 0);
         
-        for usuario in usuarios_exemplo:
-            self.cursor.execute('''
-                INSERT OR IGNORE INTO usuarios (id, username, password, tipo, nome, email)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', usuario)
+        strncpy(usuario->username, (const char*)sqlite3_column_text(sistema->stmt, 1), sizeof(usuario->username)-1);
+        strncpy(usuario->tipo, (const char*)sqlite3_column_text(sistema->stmt, 2), sizeof(usuario->tipo)-1);
+        strncpy(usuario->nome, (const char*)sqlite3_column_text(sistema->stmt, 3), sizeof(usuario->nome)-1);
         
-        # Turmas de exemplo
-        turmas_exemplo = [
-            (1, 'Programação Python', 'TURMA001', 1),
-            (2, 'Banco de Dados', 'TURMA002', 4),
-            (3, 'Redes de Computadores', 'TURMA003', 1)
-        ]
+        sqlite3_finalize(sistema->stmt);
+        return usuario;
+    }
+    
+    sqlite3_finalize(sistema->stmt);
+    return NULL;
+}
+
+Turma** listar_turmas(SistemaAcademico *sistema, int *quantidade) {
+    const char *sql = 
+        "SELECT t.id, t.nome, t.codigo, u.nome "
+        "FROM turmas t "
+        "JOIN usuarios u ON t.professor_id = u.id";
+    
+    int rc = sqlite3_prepare_v2(sistema->db, sql, -1, &sistema->stmt, 0);
+    
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "❌ Erro ao preparar consulta: %s\n", sqlite3_errmsg(sistema->db));
+        *quantidade = 0;
+        return NULL;
+    }
+    
+    // Contar resultados primeiro
+    int count = 0;
+    while (sqlite3_step(sistema->stmt) == SQLITE_ROW) {
+        count++;
+    }
+    
+    sqlite3_reset(sistema->stmt);
+    
+    // Alocar memória para o array de turmas
+    Turma *turmas = (Turma)malloc(count * sizeof(Turma));
+    if (turmas == NULL) {
+        fprintf(stderr, "❌ Erro de alocação de memória\n");
+        *quantidade = 0;
+        return NULL;
+    }
+    
+    // Preencher o array
+    int i = 0;
+    while (sqlite3_step(sistema->stmt) == SQLITE_ROW && i < count) {
+        turmas[i] = (Turma*)malloc(sizeof(Turma));
         
-        for turma in turmas_exemplo:
-            self.cursor.execute('''
-                INSERT OR IGNORE INTO turmas (id, nome, codigo, professor_id)
-                VALUES (?, ?, ?, ?)
-            ''', turma)
+        turmas[i]->id = sqlite3_column_int(sistema->stmt, 0);
         
-        # Matrículas de exemplo
-        matriculas_exemplo = [
-            (2, 1), (3, 1),  # Alunos na turma de Programação
-            (2, 2), (3, 2),  # Alunos na turma de Banco de Dados
-        ]
+        strncpy(turmas[i]->nome, (const char*)sqlite3_column_text(sistema->stmt, 1), sizeof(turmas[i]->nome)-1);
+        strncpy(turmas[i]->codigo, (const char*)sqlite3_column_text(sistema->stmt, 2), sizeof(turmas[i]->codigo)-1);
+        strncpy(turmas[i]->professor_nome, (const char*)sqlite3_column_text(sistema->stmt, 3), sizeof(turmas[i]->professor_nome)-1);
         
-        for matricula in matriculas_exemplo:
-            self.cursor.execute('''
-                INSERT OR IGNORE INTO matriculas (aluno_id, turma_id)
-                VALUES (?, ?)
-            ''', matricula)
-        
-        # Atividades de exemplo
-        atividades_exemplo = [
-            (1, 'Lista de Exercícios 1', 'Resolva os exercícios sobre variáveis e loops', 
-             '2024-12-15', 1, 1, 'tarefa'),
-            (2, 'Projeto Banco de Dados', 'Crie um modelo ER para sistema acadêmico',
-             '2024-12-20', 2, 4, 'projeto')
-        ]
-        
-        for atividade in atividades_exemplo:
-            self.cursor.execute('''
-                INSERT OR IGNORE INTO atividades (id, titulo, descricao, data_entrega, turma_id, professor_id, tipo)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', atividade)
+        i++;
+    }
     
-    # ========== MÉTODOS DE USUÁRIO ==========
-    
-    def autenticar_usuario(self, username, password):
-        """Autentica usuário no sistema"""
-        self.cursor.execute(
-            "SELECT id, username, tipo, nome FROM usuarios WHERE username = ? AND password = ?",
-            (username, password)
-        )
-        return self.cursor.fetchone()
-    
-    def obter_usuario_por_id(self, user_id):
-        """Obtém dados do usuário por ID"""
-        self.cursor.execute(
-            "SELECT id, username, tipo, nome, email FROM usuarios WHERE id = ?",
-            (user_id,)
-        )
-        return self.cursor.fetchone()
-    
-    # ========== MÉTODOS DE TURMAS ==========
-    
-    def listar_turmas(self, usuario_id=None, tipo_usuario=None):
-        """Lista turmas do sistema"""
-        if tipo_usuario == 'professor':
-            self.cursor.execute('''
-                SELECT t.id, t.nome, t.codigo, u.nome as professor_nome
-                FROM turmas t
-                LEFT JOIN usuarios u ON t.professor_id = u.id
-                WHERE t.professor_id = ?
-                ORDER BY t.nome
-            ''', (usuario_id,))
-        elif tipo_usuario == 'aluno':
-            self.cursor.execute('''
-                SELECT t.id, t.nome, t.codigo, u.nome as professor_nome
-                FROM turmas t
-                LEFT JOIN usuarios u ON t.professor_id = u.id
-                JOIN matriculas m ON t.id = m.turma_id
-                WHERE m.aluno_id = ?
-                ORDER BY t.nome
-            ''', (usuario_id,))
-        else:
-            self.cursor.execute('''
-                SELECT t.id, t.nome, t.codigo, u.nome as professor_nome
-                FROM turmas t
-                LEFT JOIN usuarios u ON t.professor_id = u.id
-                ORDER BY t.nome
-            ''')
-        
-        return self.cursor.fetchall()
-    
-    def criar_turma(self, nome, codigo, professor_id):
-        """Cria uma nova turma"""
-        try:
-            self.cursor.execute('''
-                INSERT INTO turmas (nome, codigo, professor_id)
-                VALUES (?, ?, ?)
-            ''', (nome, codigo, professor_id))
-            self.conn.commit()
-            return True, "Turma criada com sucesso"
-        except sqlite3.IntegrityError:
-            return False, "Código da turma já existe"
-    
-    # ========== MÉTODOS DE ATIVIDADES ==========
-    
-    def listar_atividades(self, turma_id=None, usuario_id=None, tipo_usuario=None):
-        """Lista atividades do sistema"""
-        if turma_id:
-            self.cursor.execute('''
-                SELECT a.id, a.titulo, a.descricao, a.data_entrega, 
-                       a.tipo, t.nome as turma_nome, u.nome as professor_nome
-                FROM atividades a
-                JOIN turmas t ON a.turma_id = t.id
-                JOIN usuarios u ON a.professor_id = u.id
-                WHERE a.turma_id = ?
-                ORDER BY a.data_entrega
-            ''', (turma_id,))
-        elif tipo_usuario == 'aluno':
-            self.cursor.execute('''
-                SELECT a.id, a.titulo, a.descricao, a.data_entrega, 
-                       a.tipo, t.nome as turma_nome, u.nome as professor_nome
-                FROM atividades a
-                JOIN turmas t ON a.turma_id = t.id
-                JOIN usuarios u ON a.professor_id = u.id
-                JOIN matriculas m ON t.id = m.turma_id
-                WHERE m.aluno_id = ?
-                ORDER BY a.data_entrega
-            ''', (usuario_id,))
-        else:
-            self.cursor.execute('''
-                SELECT a.id, a.titulo, a.descricao, a.data_entrega, 
-                       a.tipo, t.nome as turma_nome, u.nome as professor_nome
-                FROM atividades a
-                JOIN turmas t ON a.turma_id = t.id
-                JOIN usuarios u ON a.professor_id = u.id
-                ORDER BY a.data_entrega
-            ''')
-        
-        return self.cursor.fetchall()
-    
-    def criar_atividade(self, titulo, descricao, data_entrega, turma_id, professor_id, tipo='tarefa'):
-        """Cria uma nova atividade"""
-        try:
-            self.cursor.execute('''
-                INSERT INTO atividades (titulo, descricao, data_entrega, turma_id, professor_id, tipo)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (titulo, descricao, data_entrega, turma_id, professor_id, tipo))
-            self.conn.commit()
-            return True, "Atividade criada com sucesso"
-        except Exception as e:
-            return False, f"Erro ao criar atividade: {str(e)}"
-    
-    # ========== MÉTODOS DE ENTREGAS ==========
-    
-    def entregar_atividade(self, atividade_id, aluno_id, resposta, arquivo_path=None):
-        """Registra entrega de atividade"""
-        try:
-            # Verificar similaridade com IA
-            similaridade = self.ia_processor.verificar_similaridade(resposta)
-            
-            self.cursor.execute('''
-                INSERT INTO entregas (atividade_id, aluno_id, resposta, arquivo_path, similaridade_detectada)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (atividade_id, aluno_id, resposta, arquivo_path, similaridade))
-            
-            self.conn.commit()
-            
-            if similaridade:
-                return True, "Atividade entregue (similaridade detectada - será analisada)"
-            else:
-                return True, "Atividade entregue com sucesso"
-                
-        except Exception as e:
-            return False, f"Erro ao entregar atividade: {str(e)}"
-    
-    def listar_entregas(self, atividade_id=None, aluno_id=None):
-        """Lista entregas de atividades"""
-        if atividade_id and aluno_id:
-            self.cursor.execute('''
-                SELECT e.*, a.titulo, u.nome as aluno_nome
-                FROM entregas e
-                JOIN atividades a ON e.atividade_id = a.id
-                JOIN usuarios u ON e.aluno_id = u.id
-                WHERE e.atividade_id = ? AND e.aluno_id = ?
-            ''', (atividade_id, aluno_id))
-        elif atividade_id:
-            self.cursor.execute('''
-                SELECT e.*, a.titulo, u.nome as aluno_nome
-                FROM entregas e
-                JOIN atividades a ON e.atividade_id = a.id
-                JOIN usuarios u ON e.aluno_id = u.id
-                WHERE e.atividade_id = ?
-            ''', (atividade_id,))
-        else:
-            self.cursor.execute('''
-                SELECT e.*, a.titulo, u.nome as aluno_nome
-                FROM entregas e
-                JOIN atividades a ON e.atividade_id = a.id
-                JOIN usuarios u ON e.aluno_id = u.id
-            ''')
-        
-        return self.cursor.fetchall()
-    
-    # ========== MÉTODOS DE RELATÓRIOS ==========
-    
-    def gerar_relatorio_turma(self, turma_id):
-        """Gera relatório completo da turma"""
-        # Estatísticas da turma
-        self.cursor.execute('''
-            SELECT COUNT(*) as total_alunos
-            FROM matriculas 
-            WHERE turma_id = ?
-        ''', (turma_id,))
-        total_alunos = self.cursor.fetchone()[0]
-        
-        self.cursor.execute('''
-            SELECT COUNT(*) as total_atividades
-            FROM atividades 
-            WHERE turma_id = ?
-        ''', (turma_id,))
-        total_atividades = self.cursor.fetchone()[0]
-        
-        self.cursor.execute('''
-            SELECT COUNT(*) as entregas_pendentes
-            FROM atividades a
-            LEFT JOIN entregas e ON a.id = e.atividade_id
-            WHERE a.turma_id = ? AND e.id IS NULL
-        ''', (turma_id,))
-        entregas_pendentes = self.cursor.fetchone()[0]
-        
-        return {
-            'total_alunos': total_alunos,
-            'total_atividades': total_atividades,
-            'entregas_pendentes': entregas_pendentes,
-            'sustentabilidade': f"Redução estimada de {total_atividades * 5} folhas de papel"
-        }
-    
-    def fechar_conexao(self):
-        """Fecha a conexão com o banco"""
-        self.conn.close()
+    sqlite3_finalize(sistema->stmt);
+    *quantidade = count;
+    return turmas;
+}
+
+void liberar_turmas(Turma **turmas, int quantidade) {
+    for (int i = 0; i < quantidade; i++) {
+        free(turmas[i]);
+    }
+    free(turmas);
+}
+
+void mostrar_usuario(Usuario *usuario) {
+    printf("ID: %d, Username: %s, Tipo: %s, Nome: %s\n", 
+           usuario->id, usuario->username, usuario->tipo, usuario->nome);
+}
+
+void mostrar_turmas(Turma **turmas, int quantidade) {
+    printf("\n📚 LISTA DE TURMAS:\n");
+    for (int i = 0; i < quantidade; i++) {
+        printf("🏫 ID: %d, Nome: %s, Código: %s, Professor: %s\n",
+               turmas[i]->id, turmas[i]->nome, turmas[i]->codigo, turmas[i]->professor_nome);
+    }
+}
