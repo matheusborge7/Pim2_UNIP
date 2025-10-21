@@ -1,230 +1,252 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sqlite3.h>
 
-// Estruturas de dados
+#ifdef _WIN32
+  #include <direct.h>
+  #define MKDIR(dir) _mkdir(dir)
+#else
+  #include <sys/stat.h>
+  #include <sys/types.h>
+  #define MKDIR(dir) mkdir(dir, 0755)
+#endif
+
+#define DATA_DIR "data"
+#define ALUNOS_FILE DATA_DIR"/alunos.dat"
+#define TURMAS_FILE DATA_DIR"/turmas.dat"
+
+#define MAX_NOME 100
+#define MAX_ALUNOS 1000
+#define MAX_TURMAS 200
+
 typedef struct {
     int id;
-    char username[50];
-    char password[50];
-    char tipo[20];
-    char nome[100];
-} Usuario;
+    char nome[MAX_NOME];
+    char email[100];
+    int turma_id; // 0 = sem turma
+} Aluno;
 
 typedef struct {
     int id;
-    char nome[100];
-    char codigo[20];
-    int professor_id;
-    char professor_nome[100];
+    char nome[MAX_NOME];
+    char descricao[200];
 } Turma;
 
-typedef struct {
-    sqlite3 *db;
-    sqlite3_stmt *stmt;
-} SistemaAcademico;
+/* --- Funções utilitárias de persistência --- */
 
-// Protótipos das funções
-void inicializar_banco_dados(SistemaAcademico *sistema);
-Usuario* autenticar_usuario(SistemaAcademico *sistema, const char *username, const char *password);
-Turma** listar_turmas(SistemaAcademico *sistema, int *quantidade);
-void liberar_turmas(Turma **turmas, int quantidade);
-void mostrar_usuario(Usuario *usuario);
-void mostrar_turmas(Turma **turmas, int quantidade);
+void ensure_data_dir() {
+    // tenta criar, ignora se já existir
+    MKDIR(DATA_DIR);
+}
 
-// Função principal
-int main() {
-    printf("🧪 TESTANDO SISTEMA EM C...\n");
-    
-    SistemaAcademico sistema = {0};
-    
-    // Inicializar sistema
-    inicializar_banco_dados(&sistema);
-    printf("✅ Sistema Acadêmico inicializado!\n");
-    
-    // Teste de login
-    Usuario *usuario = autenticar_usuario(&sistema, "admin", "1234");
-    if (usuario != NULL) {
-        printf("✅ Login OK: ");
-        mostrar_usuario(usuario);
-        free(usuario);
+int file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+/* --- Alunos --- */
+int carregar_alunos(Aluno alunos[], int *count) {
+    *count = 0;
+    if (!file_exists(ALUNOS_FILE)) return 0;
+    FILE *f = fopen(ALUNOS_FILE, "rb");
+    if (!f) return -1;
+    fread(count, sizeof(int), 1, f);
+    if (*count > 0 && *count <= MAX_ALUNOS) {
+        fread(alunos, sizeof(Aluno), *count, f);
     } else {
-        printf("❌ Login falhou\n");
+        *count = 0;
     }
-    
-    // Teste de turmas
-    int quantidade_turmas;
-    Turma **turmas = listar_turmas(&sistema, &quantidade_turmas);
-    printf("✅ Turmas: %d encontradas\n", quantidade_turmas);
-    
-    if (quantidade_turmas > 0) {
-        mostrar_turmas(turmas, quantidade_turmas);
-        liberar_turmas(turmas, quantidade_turmas);
-    }
-    
-    // Fechar banco de dados
-    if (sistema.db != NULL) {
-        sqlite3_close(sistema.db);
-    }
-    
-    printf("🎉 SISTEMA EM C FUNCIONANDO PERFEITAMENTE!\n");
+    fclose(f);
     return 0;
 }
 
-void inicializar_banco_dados(SistemaAcademico *sistema) {
-    int rc;
-    char *err_msg = 0;
-    
-    // Abrir/Criar banco de dados
-    rc = sqlite3_open("data/academico_c.db", &sistema->db);
-    
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "❌ Não foi possível abrir o banco: %s\n", sqlite3_errmsg(sistema->db));
+int salvar_alunos(Aluno alunos[], int count) {
+    FILE *f = fopen(ALUNOS_FILE, "wb");
+    if (!f) return -1;
+    fwrite(&count, sizeof(int), 1, f);
+    if (count > 0) fwrite(alunos, sizeof(Aluno), count, f);
+    fclose(f);
+    return 0;
+}
+
+int next_aluno_id(Aluno alunos[], int count) {
+    int max = 0;
+    for (int i=0;i<count;i++) if (alunos[i].id > max) max = alunos[i].id;
+    return max + 1;
+}
+
+/* --- Turmas --- */
+int carregar_turmas(Turma turmas[], int *count) {
+    *count = 0;
+    if (!file_exists(TURMAS_FILE)) return 0;
+    FILE *f = fopen(TURMAS_FILE, "rb");
+    if (!f) return -1;
+    fread(count, sizeof(int), 1, f);
+    if (*count > 0 && *count <= MAX_TURMAS) {
+        fread(turmas, sizeof(Turma), *count, f);
+    } else {
+        *count = 0;
+    }
+    fclose(f);
+    return 0;
+}
+
+int salvar_turmas(Turma turmas[], int count) {
+    FILE *f = fopen(TURMAS_FILE, "wb");
+    if (!f) return -1;
+    fwrite(&count, sizeof(int), 1, f);
+    if (count > 0) fwrite(turmas, sizeof(Turma), count, f);
+    fclose(f);
+    return 0;
+}
+
+int next_turma_id(Turma turmas[], int count) {
+    int max = 0;
+    for (int i=0;i<count;i++) if (turmas[i].id > max) max = turmas[i].id;
+    return max + 1;
+}
+
+/* --- Interface CLI --- */
+void adicionar_aluno(Aluno alunos[], int *count) {
+    if (*count >= MAX_ALUNOS) {
+        printf("Limite de alunos atingido.\n");
         return;
     }
-    
-    // Criar tabelas
-    const char *sql_usuarios = 
-        "CREATE TABLE IF NOT EXISTS usuarios ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "username TEXT UNIQUE NOT NULL, "
-        "password TEXT NOT NULL, "
-        "tipo TEXT NOT NULL, "
-        "nome TEXT NOT NULL);";
-    
-    const char *sql_turmas = 
-        "CREATE TABLE IF NOT EXISTS turmas ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "nome TEXT NOT NULL, "
-        "codigo TEXT UNIQUE, "
-        "professor_id INTEGER);";
-    
-    rc = sqlite3_exec(sistema->db, sql_usuarios, 0, 0, &err_msg);
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "❌ Erro ao criar tabela usuarios: %s\n", err_msg);
-        sqlite3_free(err_msg);
-    }
-    
-    rc = sqlite3_exec(sistema->db, sql_turmas, 0, 0, &err_msg);
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "❌ Erro ao criar tabela turmas: %s\n", err_msg);
-        sqlite3_free(err_msg);
-    }
-    
-    // Inserir dados de exemplo
-    const char *sql_insert = 
-        "INSERT OR IGNORE INTO usuarios VALUES (1, 'admin', '1234', 'professor', 'Professor Admin');"
-        "INSERT OR IGNORE INTO usuarios VALUES (2, 'aluno1', '1234', 'aluno', 'Aluno Teste');"
-        "INSERT OR IGNORE INTO turmas VALUES (1, 'Turma Python', 'TURMA001', 1);";
-    
-    rc = sqlite3_exec(sistema->db, sql_insert, 0, 0, &err_msg);
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "❌ Erro ao inserir dados: %s\n", err_msg);
-        sqlite3_free(err_msg);
+    Aluno a;
+    memset(&a,0,sizeof(Aluno));
+    a.id = next_aluno_id(alunos, *count);
+    printf("Nome do aluno: ");
+    getchar(); // consome newline pendente
+    fgets(a.nome, MAX_NOME, stdin);
+    a.nome[strcspn(a.nome, "\n")] = '\0';
+    printf("Email: ");
+    fgets(a.email, sizeof(a.email), stdin);
+    a.email[strcspn(a.email, "\n")] = '\0';
+    a.turma_id = 0;
+    alunos[*count] = a;
+    (*count)++;
+    if (salvar_alunos(alunos, *count) == 0) {
+        printf("Aluno adicionado e salvo (ID=%d).\n", a.id);
+    } else {
+        printf("Erro ao salvar alunos.\n");
     }
 }
 
-Usuario* autenticar_usuario(SistemaAcademico *sistema, const char *username, const char *password) {
-    const char *sql = "SELECT id, username, tipo, nome FROM usuarios WHERE username = ? AND password = ?";
-    int rc;
-    
-    rc = sqlite3_prepare_v2(sistema->db, sql, -1, &sistema->stmt, 0);
-    
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "❌ Erro ao preparar consulta: %s\n", sqlite3_errmsg(sistema->db));
-        return NULL;
+void listar_alunos(Aluno alunos[], int count) {
+    if (count == 0) {
+        printf("Nenhum aluno cadastrado.\n");
+        return;
     }
-    
-    // Vincular parâmetros
-    sqlite3_bind_text(sistema->stmt, 1, username, -1, SQLITE_STATIC);
-    sqlite3_bind_text(sistema->stmt, 2, password, -1, SQLITE_STATIC);
-    
-    // Executar consulta
-    rc = sqlite3_step(sistema->stmt);
-    
-    if (rc == SQLITE_ROW) {
-        // Usuário encontrado
-        Usuario usuario = (Usuario)malloc(sizeof(Usuario));
-        usuario->id = sqlite3_column_int(sistema->stmt, 0);
-        
-        strncpy(usuario->username, (const char*)sqlite3_column_text(sistema->stmt, 1), sizeof(usuario->username)-1);
-        strncpy(usuario->tipo, (const char*)sqlite3_column_text(sistema->stmt, 2), sizeof(usuario->tipo)-1);
-        strncpy(usuario->nome, (const char*)sqlite3_column_text(sistema->stmt, 3), sizeof(usuario->nome)-1);
-        
-        sqlite3_finalize(sistema->stmt);
-        return usuario;
+    printf("=== Alunos ===\n");
+    for (int i=0;i<count;i++) {
+        printf("ID: %d | Nome: %s | Email: %s | Turma ID: %d\n",
+               alunos[i].id, alunos[i].nome, alunos[i].email, alunos[i].turma_id);
     }
-    
-    sqlite3_finalize(sistema->stmt);
-    return NULL;
 }
 
-Turma** listar_turmas(SistemaAcademico *sistema, int *quantidade) {
-    const char *sql = 
-        "SELECT t.id, t.nome, t.codigo, u.nome "
-        "FROM turmas t "
-        "JOIN usuarios u ON t.professor_id = u.id";
-    
-    int rc = sqlite3_prepare_v2(sistema->db, sql, -1, &sistema->stmt, 0);
-    
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "❌ Erro ao preparar consulta: %s\n", sqlite3_errmsg(sistema->db));
-        *quantidade = 0;
-        return NULL;
+/* --- Turmas (CRUD simples) --- */
+void adicionar_turma(Turma turmas[], int *count) {
+    if (*count >= MAX_TURMAS) {
+        printf("Limite de turmas atingido.\n");
+        return;
     }
-    
-    // Contar resultados primeiro
-    int count = 0;
-    while (sqlite3_step(sistema->stmt) == SQLITE_ROW) {
-        count++;
+    Turma t;
+    memset(&t,0,sizeof(Turma));
+    t.id = next_turma_id(turmas, *count);
+    printf("Nome da turma: ");
+    getchar(); // consome newline
+    fgets(t.nome, MAX_NOME, stdin);
+    t.nome[strcspn(t.nome, "\n")] = '\0';
+    printf("Descricao curta: ");
+    fgets(t.descricao, sizeof(t.descricao), stdin);
+    t.descricao[strcspn(t.descricao, "\n")] = '\0';
+    turmas[*count] = t;
+    (*count)++;
+    if (salvar_turmas(turmas, *count) == 0) {
+        printf("Turma adicionada e salva (ID=%d).\n", t.id);
+    } else {
+        printf("Erro ao salvar turmas.\n");
     }
-    
-    sqlite3_reset(sistema->stmt);
-    
-    // Alocar memória para o array de turmas
-    Turma *turmas = (Turma)malloc(count * sizeof(Turma));
-    if (turmas == NULL) {
-        fprintf(stderr, "❌ Erro de alocação de memória\n");
-        *quantidade = 0;
-        return NULL;
-    }
-    
-    // Preencher o array
-    int i = 0;
-    while (sqlite3_step(sistema->stmt) == SQLITE_ROW && i < count) {
-        turmas[i] = (Turma*)malloc(sizeof(Turma));
-        
-        turmas[i]->id = sqlite3_column_int(sistema->stmt, 0);
-        
-        strncpy(turmas[i]->nome, (const char*)sqlite3_column_text(sistema->stmt, 1), sizeof(turmas[i]->nome)-1);
-        strncpy(turmas[i]->codigo, (const char*)sqlite3_column_text(sistema->stmt, 2), sizeof(turmas[i]->codigo)-1);
-        strncpy(turmas[i]->professor_nome, (const char*)sqlite3_column_text(sistema->stmt, 3), sizeof(turmas[i]->professor_nome)-1);
-        
-        i++;
-    }
-    
-    sqlite3_finalize(sistema->stmt);
-    *quantidade = count;
-    return turmas;
 }
 
-void liberar_turmas(Turma **turmas, int quantidade) {
-    for (int i = 0; i < quantidade; i++) {
-        free(turmas[i]);
+void listar_turmas(Turma turmas[], int count) {
+    if (count == 0) {
+        printf("Nenhuma turma cadastrada.\n");
+        return;
     }
-    free(turmas);
+    printf("=== Turmas ===\n");
+    for (int i=0;i<count;i++) {
+        printf("ID: %d | Nome: %s | Desc: %s\n",
+               turmas[i].id, turmas[i].nome, turmas[i].descricao);
+    }
 }
 
-void mostrar_usuario(Usuario *usuario) {
-    printf("ID: %d, Username: %s, Tipo: %s, Nome: %s\n", 
-           usuario->id, usuario->username, usuario->tipo, usuario->nome);
+/* --- Associar aluno a turma --- */
+void associar_aluno_turma(Aluno alunos[], int a_count, Turma turmas[], int t_count) {
+    if (a_count == 0 || t_count == 0) {
+        printf("É necessário ter ao menos um aluno e uma turma cadastrados.\n");
+        return;
+    }
+    int aid, tid;
+    listar_alunos(alunos, a_count);
+    printf("Digite o ID do aluno: ");
+    scanf("%d", &aid);
+    int ai = -1;
+    for (int i=0;i<a_count;i++) if (alunos[i].id == aid) { ai = i; break; }
+    if (ai == -1) { printf("Aluno não encontrado.\n"); return; }
+    listar_turmas(turmas, t_count);
+    printf("Digite o ID da turma: ");
+    scanf("%d", &tid);
+    int ti = -1;
+    for (int i=0;i<t_count;i++) if (turmas[i].id == tid) { ti = i; break; }
+    if (ti == -1) { printf("Turma não encontrada.\n"); return; }
+    alunos[ai].turma_id = turmas[ti].id;
+    if (salvar_alunos(alunos, a_count) == 0) {
+        printf("Aluno associado à turma com sucesso.\n");
+    } else {
+        printf("Erro ao salvar associação.\n");
+    }
 }
 
-void mostrar_turmas(Turma **turmas, int quantidade) {
-    printf("\n📚 LISTA DE TURMAS:\n");
-    for (int i = 0; i < quantidade; i++) {
-        printf("🏫 ID: %d, Nome: %s, Código: %s, Professor: %s\n",
-               turmas[i]->id, turmas[i]->nome, turmas[i]->codigo, turmas[i]->professor_nome);
+/* --- Menu principal --- */
+void menu() {
+    ensure_data_dir();
+
+    Aluno alunos[MAX_ALUNOS];
+    Turma turmas[MAX_TURMAS];
+    int a_count = 0, t_count = 0;
+
+    carregar_alunos(alunos, &a_count);
+    carregar_turmas(turmas, &t_count);
+
+    int opt = 0;
+    while (1) {
+        printf("\n=== Sistema Acadêmico (MVP) ===\n");
+        printf("1. Adicionar aluno\n");
+        printf("2. Listar alunos\n");
+        printf("3. Adicionar turma\n");
+        printf("4. Listar turmas\n");
+        printf("5. Associar aluno -> turma\n");
+        printf("0. Sair\n");
+        printf("Escolha: ");
+        if (scanf("%d", &opt) != 1) { 
+            printf("Entrada inválida. Saindo.\n"); break;
+        }
+        switch (opt) {
+            case 1: adicionar_aluno(alunos, &a_count); break;
+            case 2: listar_alunos(alunos, a_count); break;
+            case 3: adicionar_turma(turmas, &t_count); break;
+            case 4: listar_turmas(turmas, t_count); break;
+            case 5: associar_aluno_turma(alunos, a_count, turmas, t_count); break;
+            case 0: printf("Encerrando...\n"); return;
+            default: printf("Opção inválida.\n");
+        }
     }
+}
+
+int main() {
+    menu();
+    return 0;
 }
