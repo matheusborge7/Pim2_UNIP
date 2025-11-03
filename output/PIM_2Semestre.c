@@ -3,8 +3,9 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <locale.h>
 
-/* --- Defini√ß√µes Globais (Constantes) --- */
+/* --- DefiniÁıes Globais (Constantes) --- */
 #define ARQUIVO_USUARIOS "usuarios.txt"
 #define TAM_BUF 256
 #define TEMPO_BLOQUEIO 30
@@ -19,7 +20,7 @@ typedef unsigned int uint32;
 typedef unsigned long long uint64;
 
 /*
-  Implementa√ß√£o do SHA-256 (Criptografia de Senha)
+  ImplementaÁ„o do SHA-256 (Criptografia de Senha)
 */
 #define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
 #define CH(x,y,z) (((x) & (y)) ^ (~(x) & (z)))
@@ -104,7 +105,7 @@ void sha256_final(SHA256_CTX *ctx, uint8 hash[]) {
     }
 }
 
-/* (SHA-256) Fun√ß√£o principal para transformar uma string em hash */
+/* (SHA-256) FunÁ„o principal para transformar uma string em hash */
 void sha256_string(const char *str, char out_hex[65]) {
     uint8 hash[32]; SHA256_CTX ctx; sha256_init(&ctx); sha256_update(&ctx, (const uint8*)str, strlen(str)); sha256_final(&ctx, hash);
     for (int i = 0; i < 32; i++)
@@ -128,17 +129,17 @@ typedef struct Usuario {
     char alunos[1024];
 } Usuario;
 
-/* --- Arrays globais (vari√°veis) --- */
-static Usuario *usuarios = NULL;          /* Guarda todos os usu√°rios em mem√≥ria */
+/* --- Arrays globais (vari·veis) --- */
+static Usuario *usuarios = NULL;          /* Guarda todos os usu·rios em memÛria */
 static size_t usuarios_count = 0;
 
 static char **tentativa_emails = NULL;     /* Guarda emails que tentaram logar */
 static int *tentativa_cont = NULL;         /* Guarda a contagem de tentativas */
-static int *tentativa_bloqueado = NULL;    /* Guarda se o email est√° bloqueado (1) ou n√£o (0) */
-static time_t *tentativa_tempo = NULL;     /* Guarda a hora que o bloqueio come√ßou */
+static int *tentativa_bloqueado = NULL;    /* Guarda se o email est· bloqueado (1) ou n„o (0) */
+static time_t *tentativa_tempo = NULL;     /* Guarda a hora que o bloqueio comeÁou */
 static size_t tentativas_count = 0;
 
-/* --- Fun√ß√µes de Ajuda (Helpers) --- */
+/* --- FunÁıes de Ajuda (Helpers) --- */
 
 /* (Helper) Copia uma string */
 static char *xstrdup(const char *s) {
@@ -155,7 +156,7 @@ void garantir_arquivo() {
     if (f) fclose(f);
 }
 
-/* (Helper) Libera mem√≥ria do array de usu√°rios */
+/* (Helper) Libera memÛria do array de usu·rios */
 void liberar_usuarios_buffer() {
     if (usuarios) {
         free(usuarios);
@@ -164,9 +165,9 @@ void liberar_usuarios_buffer() {
     }
 }
 
-/* --- Fun√ß√µes de Leitura/Escrita de Arquivo --- */
+/* --- FunÁıes de Leitura/Escrita de Arquivo --- */
 
-/* Carrega todos os usu√°rios do arquivo "usuarios.txt" para a mem√≥ria */
+/* Carrega todos os usu·rios do arquivo "usuarios.txt" para a memÛria */
 /* (Usa parser manual para campos vazios ||) */
 void carregar_usuarios() {
     garantir_arquivo();
@@ -180,7 +181,7 @@ void carregar_usuarios() {
         if (strlen(linha) == 0) continue;
         
         if (usuarios_count >= (size_t)MAX_USERS) {
-            printf("Aviso: limite MAX_USERS atingido. Ignorando usu√°rios adicionais no arquivo.\n");
+            printf("Aviso: limite MAX_USERS atingido. Ignorando usu·rios adicionais no arquivo.\n");
             break;
         }
         
@@ -223,10 +224,10 @@ void carregar_usuarios() {
     fclose(f);
 }
 
-/* Salva todos os usu√°rios da mem√≥ria de volta para o "usuarios.txt" */
+/* Salva todos os usu·rios da memÛria de volta para o "usuarios.txt" */
 void salvar_usuarios() {
     FILE *f = fopen(ARQUIVO_USUARIOS, "w");
-    if (!f) { printf("Erro ao salvar usu√°rios.\n"); return; }
+    if (!f) { printf("Erro ao salvar usu·rios.\n"); return; }
     for (size_t i=0;i<usuarios_count;i++) {
         Usuario *u = &usuarios[i];
         fprintf(f, "%s|%s|%s|%s|%s|%s|%s|%s\n",
@@ -239,7 +240,7 @@ void salvar_usuarios() {
     fclose(f);
 }
 
-/* Busca um usu√°rio no array da mem√≥ria pelo email */
+/* Busca um usu·rio no array da memÛria pelo email */
 Usuario* encontrar_usuario_por_email(const char *email) {
     if (!email) return NULL;
     for (size_t i=0;i<usuarios_count;i++) if (strcasecmp(usuarios[i].email, email) == 0) return &usuarios[i];
@@ -247,16 +248,16 @@ Usuario* encontrar_usuario_por_email(const char *email) {
 }
 
 
-/* --- Fun√ß√µes de Controle de Tentativa de Login --- */
+/* --- FunÁıes de Controle de Tentativa de Login --- */
 
-/* (Login) Acha o √≠ndice de um email na lista de tentativas */
+/* (Login) Acha o Ìndice de um email na lista de tentativas */
 int index_tentativa(const char *email) {
     if (!email) return -1;
     for (size_t i=0;i<tentativas_count;i++) if (tentativa_emails[i] && strcasecmp(tentativa_emails[i], email) == 0) return (int)i;
     return -1;
 }
 
-/* (Login) Aloca mem√≥ria para os arrays de tentativa */
+/* (Login) Aloca memÛria para os arrays de tentativa */
 int init_tentativas_arrays() {
     if (tentativa_emails) return 1; 
     tentativa_emails = (char**)malloc(sizeof(char*) * MAX_TENTATIVAS_CAP);
@@ -273,13 +274,13 @@ int init_tentativas_arrays() {
     return 1;
 }
 
-/* (Login) Cria um registro de tentativa para um email (se n√£o existir) */
+/* (Login) Cria um registro de tentativa para um email (se n„o existir) */
 void garantir_tentativa(const char *email) {
     if (!email) return;
-    if (!init_tentativas_arrays()) { printf("Erro ao inicializar tentativas (mem√≥ria insuficiente).\n"); return; }
+    if (!init_tentativas_arrays()) { printf("Erro ao inicializar tentativas (memÛria insuficiente).\n"); return; }
     if (index_tentativa(email) >= 0) return;
     if (tentativas_count >= (size_t)MAX_TENTATIVAS_CAP) {
-        printf("Limite de tentativa entries atingido; n√£o ser√° poss√≠vel registrar nova tentativa para %s\n", email);
+        printf("Limite de tentativa entries atingido; n„o ser· possÌvel registrar nova tentativa para %s\n", email);
         return;
     }
     tentativa_emails[tentativas_count] = xstrdup(email);
@@ -289,7 +290,7 @@ void garantir_tentativa(const char *email) {
     tentativas_count++;
 }
 
-/* (Login) Verifica se o email n√£o est√° bloqueado por tempo */
+/* (Login) Verifica se o email n„o est· bloqueado por tempo */
 int pode_tentar_login(const char *email, int *tempo_restante) {
     garantir_tentativa(email);
     int idx = index_tentativa(email);
@@ -312,7 +313,7 @@ void registrar_tentativa_errada(const char *email) {
     if (tentativa_cont[idx] >= MAX_TENTATIVAS_CAP) { tentativa_bloqueado[idx] = 1; tentativa_tempo[idx] = time(NULL); }
 }
 
-/* (Login) Zera as tentativas ap√≥s login com sucesso */
+/* (Login) Zera as tentativas apÛs login com sucesso */
 void reset_tentativas(const char *email) {
     garantir_tentativa(email);
     int idx = index_tentativa(email);
@@ -320,9 +321,9 @@ void reset_tentativas(const char *email) {
     tentativa_cont[idx] = 0; tentativa_bloqueado[idx] = 0; tentativa_tempo[idx] = 0;
 }
 
-/* --- Fun√ß√µes Utilit√°rias (manipula√ß√£o de strings) --- */
+/* --- FunÁıes Utilit·rias (manipulaÁ„o de strings) --- */
 
-/* (Helper) Remove espa√ßos em branco do in√≠cio e fim de uma string */
+/* (Helper) Remove espaÁos em branco do inÌcio e fim de uma string */
 void trim(char *s) {
     if (!s) return;
     char *p = s; while (*p && isspace((unsigned char)*p)) p++;
@@ -330,13 +331,13 @@ void trim(char *s) {
     size_t len = strlen(s); while (len>0 && isspace((unsigned char)s[len-1])) s[--len]=0;
 }
 
-/* (Helper) Valida√ß√£o simples de email (cont√©m @ e .) */
+/* (Helper) ValidaÁ„o simples de email (contÈm @ e .) */
 int validar_email(const char *email) { return (email && strchr(email, '@') && strchr(email, '.')) ? 1 : 0; }
 
 
-/* --- Fun√ß√µes de Manipula√ß√£o de Dados do Usu√°rio --- */
+/* --- FunÁıes de ManipulaÁ„o de Dados do Usu·rio --- */
 
-/* (Helper) Verifica se um email est√° numa lista (string separada por ';') */
+/* (Helper) Verifica se um email est· numa lista (string separada por ';') */
 int email_na_lista(const char *lista, const char *email) {
     if (!lista || !*lista || !email) return 0;
     char tmp[1024]; strncpy(tmp, lista, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
@@ -348,7 +349,7 @@ void adicionar_email_na_lista(char *lista, size_t max_len, const char *email) {
     if (!lista || !email) return;
     if (email_na_lista(lista, email)) return;
     size_t need = strlen(lista) + strlen(email) + 2; 
-    if (need > max_len) { printf("Espa√ßo insuficiente para adicionar item.\n"); return; }
+    if (need > max_len) { printf("EspaÁo insuficiente para adicionar item.\n"); return; }
     if (strlen(lista)) strcat(lista, ";");
     strcat(lista, email);
 }
@@ -359,14 +360,14 @@ void adicionar_curso_em_usuario(Usuario *al, const char *curso) {
     int count = 0;
     if (strlen(al->cursos)) { char tmp[512]; strcpy(tmp, al->cursos); char *t = strtok(tmp, ";"); while (t) { count++; t = strtok(NULL, ";"); } }
     
-    // Regra de neg√≥cio: Aluno s√≥ pode ter 3 cursos
+    // Regra de negÛcio: Aluno sÛ pode ter 3 cursos
     if (count >= 3) { 
-        printf("Aluno j√° possui 3 cursos.\n"); 
+        printf("Aluno j· possui 3 cursos.\n"); 
         return; 
     }
     
     size_t need = strlen(al->cursos) + strlen(curso) + 2;
-    if (need > sizeof(al->cursos)) { printf("Espa√ßo insuficiente para adicionar curso.\n"); return; }
+    if (need > sizeof(al->cursos)) { printf("EspaÁo insuficiente para adicionar curso.\n"); return; }
     if (strlen(al->cursos)) strcat(al->cursos, ";");
     strcat(al->cursos, curso);
 }
@@ -394,7 +395,7 @@ void adicionar_nota_em_usuario(Usuario *al, const char *curso, double nota) {
         if (atualizado) { strncpy(al->notas, novo, sizeof(al->notas)-1); return; }
     }
     size_t need = strlen(al->notas) + strlen(entrada) + 2;
-    if (need > sizeof(al->notas)) { printf("Espa√ßo insuficiente para adicionar nota.\n"); return; }
+    if (need > sizeof(al->notas)) { printf("EspaÁo insuficiente para adicionar nota.\n"); return; }
     if (strlen(al->notas)) strcat(al->notas, ",");
     strcat(al->notas, entrada);
 }
@@ -403,15 +404,15 @@ void adicionar_nota_em_usuario(Usuario *al, const char *curso, double nota) {
 void adicionar_aula_em_usuario(Usuario *al, const char *aula) {
     if (!al || !aula) return;
     size_t need = strlen(al->aulas) + strlen(aula) + 2;
-    if (need > sizeof(al->aulas)) { printf("Espa√ßo insuficiente para adicionar aula.\n"); return; }
+    if (need > sizeof(al->aulas)) { printf("EspaÁo insuficiente para adicionar aula.\n"); return; }
     if (strlen(al->aulas)) strcat(al->aulas, ";");
     strcat(al->aulas, aula);
 }
 
 
-/* --- Fun√ß√µes Principais (Telas do Sistema) --- */
+/* --- FunÁıes Principais (Telas do Sistema) --- */
 
-/* Fun√ß√£o Principal: Login de Usu√°rio */
+/* FunÁ„o Principal: Login de Usu·rio */
 int login_usuario_index(char out_email[128]) {
     carregar_usuarios();
     char email[128], senha[128];
@@ -448,20 +449,20 @@ int login_usuario_index(char out_email[128]) {
     return -1;
 }
 
-/* Fun√ß√£o Principal: Cadastro de Usu√°rio */
+/* FunÁ„o Principal: Cadastro de Usu·rio */
 void cadastrar_usuario() {
     carregar_usuarios();
-    if (usuarios_count >= (size_t)MAX_USERS) { printf("Capacidade m√°xima de usu√°rios atingida. N√£o √© poss√≠vel cadastrar mais.\n"); return; }
+    if (usuarios_count >= (size_t)MAX_USERS) { printf("Capacidade m·xima de usu·rios atingida. N„o È possÌvel cadastrar mais.\n"); return; }
     char nome[128], email[128], senha[128], tipo_buf[16];
     printf("\n=== Cadastro ===\n");
     printf("Nome: "); if (!fgets(nome, sizeof(nome), stdin)) return; nome[strcspn(nome, "\n")] = 0; trim(nome);
     printf("Email: "); if (!fgets(email, sizeof(email), stdin)) return; email[strcspn(email, "\n")] = 0; trim(email);
     for (char *p=email; *p; ++p) *p = tolower(*p);
-    if (!validar_email(email)) { printf("Email inv√°lido.\n"); return; }
-    if (encontrar_usuario_por_email(email)) { printf("Email j√° cadastrado.\n"); return; }
+    if (!validar_email(email)) { printf("Email inv·lido.\n"); return; }
+    if (encontrar_usuario_por_email(email)) { printf("Email j· cadastrado.\n"); return; }
     printf("Senha: "); if (!fgets(senha, sizeof(senha), stdin)) return; senha[strcspn(senha, "\n")] = 0;
     printf("Tipo (A = Aluno, P = Professor): "); if (!fgets(tipo_buf, sizeof(tipo_buf), stdin)) return; tipo_buf[strcspn(tipo_buf, "\n")] = 0; trim(tipo_buf);
-    char tipo_c = toupper((unsigned char)tipo_buf[0]); if (tipo_c != 'A' && tipo_c != 'P') { printf("Tipo inv√°lido.\n"); return; }
+    char tipo_c = toupper((unsigned char)tipo_buf[0]); if (tipo_c != 'A' && tipo_c != 'P') { printf("Tipo inv·lido.\n"); return; }
 
     Usuario u; memset(&u, 0, sizeof(Usuario)); strncpy(u.nome, nome, sizeof(u.nome)-1); strncpy(u.email, email, sizeof(u.email)-1);
     char hash[65]; sha256_string(senha, hash); strncpy(u.senha_hash, hash, sizeof(u.senha_hash)-1);
@@ -478,16 +479,16 @@ void menu_aluno(const char *email_usuario) {
     while (1) {
         carregar_usuarios();
         Usuario *usuario = encontrar_usuario_por_email(email_usuario);
-        if (!usuario) { printf("Usu√°rio n√£o encontrado (ou foi removido). Saindo do menu.\n"); return; }
+        if (!usuario) { printf("Usu·rio n„o encontrado (ou foi removido). Saindo do menu.\n"); return; }
 
-        printf("=== Menu Aluno ===\n1 - Ver informa√ß√µes\n2 - Ver cursos\n3 - Ver notas\n4 - Ver aulas\n0 - Sair\nEscolha uma op√ß√£o: ");
+        printf("=== Menu Aluno ===\n1 - Ver informaÁıes\n2 - Ver cursos\n3 - Ver notas\n4 - Ver aulas\n0 - Sair\nEscolha uma opÁ„o: ");
         if (!fgets(opcao, sizeof(opcao), stdin))
         break;
     trim(opcao);
         if (strcmp(opcao, "1") == 0) printf("\nNome: %s\nEmail: %s\n\n", usuario->nome, usuario->email);
         else if (strcmp(opcao, "2") == 0) {
             if (strlen(usuario->cursos)) { char tmp[512]; strcpy(tmp, usuario->cursos); char *t = strtok(tmp, ";"); printf("\nSeus cursos:\n"); while (t) { printf("- %s\n", t); t = strtok(NULL, ";"); } printf("\n"); }
-            else printf("Voc√™ n√£o est√° matriculado em nenhum curso.\n\n");
+            else printf("VocÍ n„o est· matriculado em nenhum curso.\n\n");
         }
         else if (strcmp(opcao, "3") == 0) {
             if (strlen(usuario->notas)) { char tmp[1024]; strcpy(tmp, usuario->notas); char *t = strtok(tmp, ","); printf("\nSuas notas:\n"); while (t) { printf("%s\n", t); t = strtok(NULL, ","); } printf("\n"); }
@@ -497,7 +498,7 @@ void menu_aluno(const char *email_usuario) {
             if (strlen(usuario->aulas)) { char tmp[512]; strcpy(tmp, usuario->aulas); char *t = strtok(tmp, ";"); printf("\nSuas aulas:\n"); while (t) { printf("- %s\n", t); t = strtok(NULL, ";"); } printf("\n"); }
             else printf("Nenhuma aula cadastrada.\n\n");
         }
-        else if (strcmp(opcao, "0") == 0) break; else printf("Op√ß√£o inv√°lida.\n");
+        else if (strcmp(opcao, "0") == 0) break; else printf("OpÁ„o inv·lida.\n");
     }
 }
 
@@ -507,17 +508,17 @@ void menu_professor(const char *email_prof) {
     while (1) {
         carregar_usuarios(); 
         Usuario *professor = encontrar_usuario_por_email(email_prof);
-        if (!professor) { printf("Usu√°rio n√£o encontrado (ou foi removido). Saindo do menu.\n"); return; }
+        if (!professor) { printf("Usu·rio n„o encontrado (ou foi removido). Saindo do menu.\n"); return; }
 
-        printf("=== Menu Professor ===\n1 - Ver informa√ß√µes\n2 - Adicionar aluno\n3 - Adicionar curso para aluno\n4 - Adicionar nota para aluno\n5 - Adicionar aula para aluno\n6 - Ver alunos e dados\n0 - Sair\nEscolha uma op√ß√£o: ");
+        printf("=== Menu Professor ===\n1 - Ver informaÁıes\n2 - Adicionar aluno\n3 - Adicionar curso para aluno\n4 - Adicionar nota para aluno\n5 - Adicionar aula para aluno\n6 - Ver alunos e dados\n0 - Sair\nEscolha uma opÁ„o: ");
         if (!fgets(opcao, sizeof(opcao), stdin))
         break;
     trim(opcao);
         
-        /* Op√ß√£o 1: Ver informa√ß√µes */
+        /* OpÁ„o 1: Ver informaÁıes */
         if (strcmp(opcao, "1") == 0) printf("\nNome: %s\nEmail: %s\n\n", professor->nome, professor->email);
         
-        /* Op√ß√£o 2: Adicionar aluno (na lista do professor) */
+        /* OpÁ„o 2: Adicionar aluno (na lista do professor) */
         else if (strcmp(opcao, "2") == 0) {
             char email_aluno[128]; printf("Digite o email do aluno para adicionar: "); if (!fgets(email_aluno, sizeof(email_aluno), stdin)) continue; email_aluno[strcspn(email_aluno, "\n")] = 0; trim(email_aluno); for (char *p=email_aluno; *p; ++p) *p = tolower(*p);
             
@@ -526,60 +527,60 @@ void menu_professor(const char *email_prof) {
                 adicionar_email_na_lista(professor->alunos, sizeof(professor->alunos), email_aluno);
                 salvar_usuarios(); 
                 printf("Aluno adicionado com sucesso!\n");
-            } else printf("Aluno n√£o encontrado.\n");
+            } else printf("Aluno n„o encontrado.\n");
         }
         
-        /* Op√ß√£o 3: Adicionar curso para um aluno */
+        /* OpÁ„o 3: Adicionar curso para um aluno */
         else if (strcmp(opcao, "3") == 0) {
-            if (strlen(professor->alunos) == 0) { printf("Voc√™ n√£o tem alunos adicionados.\n\n"); continue; } 
+            if (strlen(professor->alunos) == 0) { printf("VocÍ n„o tem alunos adicionados.\n\n"); continue; } 
             char email_aluno[128]; printf("Digite o email do aluno para adicionar curso: "); if (!fgets(email_aluno, sizeof(email_aluno), stdin)) continue; email_aluno[strcspn(email_aluno, "\n")] = 0; trim(email_aluno); for (char *p=email_aluno; *p; ++p) *p = tolower(*p);
-            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno n√£o est√° na sua lista.\n"); continue; }
+            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno n„o est· na sua lista.\n"); continue; }
             
-            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno n√£o encontrado.\n"); continue; }
+            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno n„o encontrado.\n"); continue; }
             char curso[128]; printf("Digite o nome do curso: "); if (!fgets(curso, sizeof(curso), stdin)) continue; curso[strcspn(curso, "\n")] = 0; trim(curso);
             adicionar_curso_em_usuario(al, curso); 
             salvar_usuarios(); 
             printf("Curso adicionado com sucesso!\n");
         }
         
-        /* Op√ß√£o 4: Adicionar nota para um aluno */
+        /* OpÁ„o 4: Adicionar nota para um aluno */
         else if (strcmp(opcao, "4") == 0) {
-            if (strlen(professor->alunos) == 0) { printf("Voc√™ n√£o tem alunos adicionados.\n\n"); continue; }
+            if (strlen(professor->alunos) == 0) { printf("VocÍ n„o tem alunos adicionados.\n\n"); continue; }
             char email_aluno[128]; printf("Digite o email do aluno para adicionar nota: "); if (!fgets(email_aluno, sizeof(email_aluno), stdin)) continue; email_aluno[strcspn(email_aluno, "\n")] = 0; trim(email_aluno); for (char *p=email_aluno; *p; ++p) *p = tolower(*p);
-            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno n√£o est√° na sua lista.\n"); continue; }
+            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno n„o est· na sua lista.\n"); continue; }
             
-            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno n√£o encontrado.\n"); continue; }
-            if (!strlen(al->cursos)) { printf("Aluno n√£o possui cursos.\n"); continue; }
+            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno n„o encontrado.\n"); continue; }
+            if (!strlen(al->cursos)) { printf("Aluno n„o possui cursos.\n"); continue; }
             char tmp[512]; strcpy(tmp, al->cursos); char *lista[32]; int n=0; char *x = strtok(tmp, ";"); while (x && n<32) { lista[n++] = x; x = strtok(NULL, ";"); }
             
             for (int i=0;i<n;i++) {
                 printf("%d - %s\n", i+1, lista[i]); 
             }
             
-            char escolha[8]; printf("Escolha o n√∫mero do curso para adicionar nota: "); if (!fgets(escolha, sizeof(escolha), stdin)) continue; trim(escolha); int idx = atoi(escolha); if (idx<1 || idx>n) { printf("Op√ß√£o inv√°lida.\n"); continue; }
+            char escolha[8]; printf("Escolha o n˙mero do curso para adicionar nota: "); if (!fgets(escolha, sizeof(escolha), stdin)) continue; trim(escolha); int idx = atoi(escolha); if (idx<1 || idx>n) { printf("OpÁ„o inv·lida.\n"); continue; }
             char nota_str[32]; printf("Digite a nota (0-10): "); if (!fgets(nota_str, sizeof(nota_str), stdin)) continue; nota_str[strcspn(nota_str, "\n")] = 0; trim(nota_str);
-            double nota = atof(nota_str); if (nota < 0.0 || nota > 10.0) { printf("Nota inv√°lida.\n"); continue; }
+            double nota = atof(nota_str); if (nota < 0.0 || nota > 10.0) { printf("Nota inv·lida.\n"); continue; }
             adicionar_nota_em_usuario(al, lista[idx-1], nota); 
             salvar_usuarios(); 
             printf("Nota adicionada com sucesso!\n");
         }
         
-        /* Op√ß√£o 5: Adicionar aula para um aluno */
+        /* OpÁ„o 5: Adicionar aula para um aluno */
         else if (strcmp(opcao, "5") == 0) {
-            if (strlen(professor->alunos) == 0) { printf("Voc√™ n√£o tem alunos adicionados.\n\n"); continue; }
+            if (strlen(professor->alunos) == 0) { printf("VocÍ n„o tem alunos adicionados.\n\n"); continue; }
             char email_aluno[128]; printf("Digite o email do aluno para adicionar aula: "); if (!fgets(email_aluno, sizeof(email_aluno), stdin)) continue; email_aluno[strcspn(email_aluno, "\n")] = 0; trim(email_aluno); for (char *p=email_aluno; *p; ++p) *p = tolower(*p);
-            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno n√£o est√° na sua lista.\n"); continue; }
+            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno n„o est· na sua lista.\n"); continue; }
             
-            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno n√£o encontrado.\n"); continue; }
+            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno n„o encontrado.\n"); continue; }
             char aula[256]; printf("Digite o link da aula: "); if (!fgets(aula, sizeof(aula), stdin)) continue; aula[strcspn(aula, "\n")] = 0; trim(aula);
             adicionar_aula_em_usuario(al, aula); 
             salvar_usuarios(); 
             printf("Aula adicionada com sucesso!\n");
         }
         
-        /* Op√ß√£o 6: Ver todos os alunos e seus dados */
+        /* OpÁ„o 6: Ver todos os alunos e seus dados */
         else if (strcmp(opcao, "6") == 0) {
-            if (strlen(professor->alunos) == 0) { printf("Voc√™ n√£o tem alunos adicionados.\n\n"); continue; }
+            if (strlen(professor->alunos) == 0) { printf("VocÍ n„o tem alunos adicionados.\n\n"); continue; }
             printf("\n=== Alunos e dados ===\n");
             char tmp[1024]; strncpy(tmp, professor->alunos, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
             char *t = strtok(tmp, ";");
@@ -592,23 +593,23 @@ void menu_professor(const char *email_prof) {
                     if (strlen(al->notas)) { char ntmp[1024]; strcpy(ntmp, al->notas); char *p2 = strtok(ntmp, ","); while (p2) { printf("  %s\n", p2); p2 = strtok(NULL, ","); } }
                     else printf("  Nenhuma nota.\n");
                     printf("Aulas: %s\n", strlen(al->aulas)? al->aulas : "Nenhuma");
-                } else printf("Aluno %s n√£o encontrado.\n", t);
+                } else printf("Aluno %s n„o encontrado.\n", t);
                 t = strtok(NULL, ";");
             }
             printf("\n");
         }
         
-        /* Op√ß√£o 0: Sair do menu do professor */
+        /* OpÁ„o 0: Sair do menu do professor */
         else if (strcmp(opcao, "0") == 0) break; 
         
-        /* Op√ß√£o Inv√°lida */
-        else printf("Op√ß√£o inv√°lida.\n");
+        /* OpÁ„o Inv·lida */
+        else printf("OpÁ„o inv·lida.\n");
     }
 }
 
-/* --- Fun√ß√µes de Inicializa√ß√£o e Limpeza do Programa --- */
+/* --- FunÁıes de InicializaÁ„o e Limpeza do Programa --- */
 
-/* Inicializa os arrays globais (aloca mem√≥ria) */
+/* Inicializa os arrays globais (aloca memÛria) */
 int init_global_structs() {
     if (!usuarios) {
         usuarios = (Usuario*)malloc(sizeof(Usuario) * MAX_USERS);
@@ -619,7 +620,7 @@ int init_global_structs() {
     return 1;
 }
 
-/* Libera toda a mem√≥ria (free) antes de fechar o programa */
+/* Libera toda a memÛria (free) antes de fechar o programa */
 void cleanup() {
     if (tentativa_emails) {
         for (size_t i=0;i<tentativas_count;i++) if (tentativa_emails[i]) free(tentativa_emails[i]);
@@ -632,11 +633,14 @@ void cleanup() {
     liberar_usuarios_buffer();
 }
 
-/* --- Fun√ß√£o Principal (main) --- */
+/* --- FunÁ„o Principal (main) --- */
+
 int main() {
+    setlocale(LC_ALL, "portuguese"); // <--- ALTERA«√O FEITA AQUI
+
     /* Inicializa as estruturas */
     if (!init_global_structs()) {
-        printf("Erro de inicializa√ß√£o: mem√≥ria insuficiente.\n");
+        printf("Erro de inicializaÁ„o: memÛria insuficiente.\n");
         return 1;
     }
     garantir_arquivo();
@@ -646,7 +650,7 @@ int main() {
     
     /* Loop do menu principal (Login/Cadastro/Sair) */
     while (1) {
-        printf("=== Sistema Acad√™mico ===\n1 - Cadastrar\n2 - Login\n0 - Sair\nEscolha uma op√ß√£o: ");
+        printf("=== Sistema AcadÍmico ===\n1 - Cadastrar\n2 - Login\n0 - Sair\nEscolha uma opÁ„o: ");
         if (!fgets(opcao, sizeof(opcao), stdin))
         break;
     trim(opcao);
@@ -658,7 +662,7 @@ int main() {
             
             if (idx >= 0) {
                 Usuario *u = encontrar_usuario_por_email(current_email);
-                if (!u) { printf("Erro: usu√°rio n√£o encontrado ap√≥s login.\n"); continue; }
+                if (!u) { printf("Erro: usu·rio n„o encontrado apÛs login.\n"); continue; }
                 
                 /* Direciona para o menu correto (Aluno ou Professor) */
                 if (strcmp(u->tipo, "aluno") == 0) menu_aluno(current_email);
@@ -669,10 +673,10 @@ int main() {
             }
         }
         else if (strcmp(opcao, "0") == 0) { printf("Saindo...\n"); break; }
-        else printf("Op√ß√£o inv√°lida.\n");
+        else printf("OpÁ„o inv·lida.\n");
     }
 
-    /* Limpa a mem√≥ria antes de sair */
+    /* Limpa a memÛria antes de sair */
     cleanup();
     return 0;
 }
