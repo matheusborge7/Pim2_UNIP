@@ -1,2 +1,2 @@
 Rinaldo|rinaldo12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|professor||||matheus12@gmail.com
-Matheus|matheus12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|aluno|Python|Python:7.0|https://word.cloud.microsoft/pt-br/|
+Matheus|matheus12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|aluno|Python;C¢digos em C|Python:7.0,C¢digos em C:10,0|https://word.cloud.microsoft/pt-br/|
