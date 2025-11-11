@@ -1,2 +1,5 @@
-Rinaldo|rinaldo12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|professor||||matheus12@gmail.com
-Matheus|matheus12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|aluno|Python;C¢digos em C|Python:7.0,C¢digos em C:10,0|https://word.cloud.microsoft/pt-br/|
+Rinaldo|rinaldo12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|professor||||matheus12@gmail.com;savio12@gmail.com|
+Matheus|matheus12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|aluno|Python;C¢digos em C|Python:7.0,C¢digos em C:10,0|https://word.cloud.microsoft/pt-br/||Curso muito ruim
+Matheus Borges da Silva|matheussantitsa54@gmail.com|704716fa436128e43be006ce86ef6d5ad6881a58e434c4feb3aa57b3e01cd83d|aluno|||||
+Reog‚rio|rog‚rio12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|professor||||savio12@gmail.com|
+Savio|savio12@gmail.com|a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3|aluno|Algoritmos e Estruturas em C;1;Python|Algoritmos e Estruturas em C:8,0,Python:9,0|https://onedrive.live.com/:w:/g/personal/5165A6A705371F0A/ETvgfAzPj19Gg-a0Ri8X||

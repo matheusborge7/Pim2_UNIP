@@ -4,6 +4,7 @@
 #include <time.h>
 #include <ctype.h>
 #include <locale.h>
+#include <math.h> 
 
 /* --- Definições Globais (Constantes) --- */
 #define ARQUIVO_USUARIOS "usuarios.txt"
@@ -127,6 +128,7 @@ typedef struct Usuario {
     char notas[1024];
     char aulas[512];
     char alunos[1024];
+    char feedback[1024]; /* NOVO CAMPO: Para Análise de Sentimento */
 } Usuario;
 
 /* --- Arrays globais (variáveis) --- */
@@ -165,15 +167,147 @@ void liberar_usuarios_buffer() {
     }
 }
 
+/* (Helper) Remove espaços em branco do início e fim de uma string */
+void trim(char *s) {
+    size_t len = strlen(s);
+    if (len == 0) return;
+    
+    // Remove do final
+    while (len > 0 && isspace((unsigned char)s[len - 1])) {
+        s[--len] = '\0';
+    }
+    
+    // Remove do início
+    size_t start = 0;
+    while (start < len && isspace((unsigned char)s[start])) {
+        start++;
+    }
+    
+    if (start > 0) {
+        memmove(s, s + start, len - start + 1);
+    }
+}
+
+/* (Helper) Verifica se um email está na lista de emails (separados por ';') */
+int email_na_lista(const char *lista, const char *email) {
+    if (!lista || !email || strlen(lista) == 0) return 0;
+    char tmp[1024]; strncpy(tmp, lista, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = 0;
+    char *t = strtok(tmp, ";");
+    while (t) {
+        if (strcasecmp(t, email) == 0) return 1;
+        t = strtok(NULL, ";");
+    }
+    return 0;
+}
+
+/* (Helper) Adiciona um email à lista de emails (separados por ';') */
+void adicionar_email_na_lista(char *lista, size_t max_len, const char *email) {
+    if (strlen(lista) == 0) {
+        strncpy(lista, email, max_len - 1);
+    } else if (!email_na_lista(lista, email)) {
+        if (strlen(lista) + 1 + strlen(email) < max_len) {
+            strcat(lista, ";");
+            strcat(lista, email);
+        }
+    }
+}
+
+/* (Helper) Adiciona um curso ao usuário */
+void adicionar_curso_em_usuario(Usuario *u, const char *curso) {
+    if (strlen(u->cursos) == 0) {
+        strncpy(u->cursos, curso, sizeof(u->cursos) - 1);
+    } else {
+        // Verifica se o curso já existe (simplificado: busca por substring)
+        char tmp[512]; strncpy(tmp, u->cursos, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = 0;
+        char *t = strtok(tmp, ";");
+        int encontrado = 0;
+        while (t) {
+            if (strcasecmp(t, curso) == 0) { encontrado = 1; break; }
+            t = strtok(NULL, ";");
+        }
+        
+        if (!encontrado) {
+            if (strlen(u->cursos) + 1 + strlen(curso) < sizeof(u->cursos)) {
+                strcat(u->cursos, ";");
+                strcat(u->cursos, curso);
+            }
+        }
+    }
+}
+
+/* (Helper) Adiciona uma nota ao usuário */
+void adicionar_nota_em_usuario(Usuario *u, const char *curso, double nota) {
+    char nota_str[128];
+    snprintf(nota_str, sizeof(nota_str), "%s:%.2f", curso, nota);
+    
+    if (strlen(u->notas) == 0) {
+        strncpy(u->notas, nota_str, sizeof(u->notas) - 1);
+    } else {
+        // Verifica se já existe nota para o curso e substitui (ou adiciona)
+        char tmp[1024]; strncpy(tmp, u->notas, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = 0;
+        char *p = tmp;
+        char *next_token;
+        char *new_notas = (char*)malloc(sizeof(u->notas));
+        new_notas[0] = '\0';
+        int substituido = 0;
+        
+        char *token = strtok_r(p, ",", &next_token);
+        while (token != NULL) {
+            char *sep = strchr(token, ':');
+            if (sep) {
+                *sep = '\0';
+                if (strcasecmp(token, curso) == 0) {
+                    // Substitui a nota
+                    if (strlen(new_notas) > 0) strcat(new_notas, ",");
+                    strcat(new_notas, nota_str);
+                    substituido = 1;
+                } else {
+                    // Mantém a nota existente
+                    *sep = ':';
+                    if (strlen(new_notas) > 0) strcat(new_notas, ",");
+                    strcat(new_notas, token);
+                }
+            }
+            token = strtok_r(NULL, ",", &next_token);
+        }
+        
+        if (!substituido) {
+            // Adiciona a nova nota
+            if (strlen(new_notas) > 0) strcat(new_notas, ",");
+            strcat(new_notas, nota_str);
+        }
+        
+        strncpy(u->notas, new_notas, sizeof(u->notas) - 1);
+        u->notas[sizeof(u->notas) - 1] = '\0';
+        free(new_notas);
+    }
+}
+
+/* (Helper) Adiciona uma aula ao usuário */
+void adicionar_aula_em_usuario(Usuario *u, const char *aula) {
+    if (strlen(u->aulas) == 0) {
+        strncpy(u->aulas, aula, sizeof(u->aulas) - 1);
+    } else {
+        if (strlen(u->aulas) + 1 + strlen(aula) < sizeof(u->aulas)) {
+            strcat(u->aulas, ";");
+            strcat(u->aulas, aula);
+        }
+    }
+}
+
 /* --- Funções de Leitura/Escrita de Arquivo --- */
 
 /* Carrega todos os usuários do arquivo "usuarios.txt" para a memória */
 /* (Usa parser manual para campos vazios ||) */
 void carregar_usuarios() {
+    liberar_usuarios_buffer(); // Libera antes de carregar
+    usuarios = (Usuario*)malloc(sizeof(Usuario) * MAX_USERS);
+    if (!usuarios) { printf("Erro de alocação de memória para usuários.\n"); return; }
+
     garantir_arquivo();
     FILE *f = fopen(ARQUIVO_USUARIOS, "r");
     if (!f) return;
-    char linha[TAM_BUF];
+    char linha[2048]; // Aumentado para suportar o novo campo feedback
     usuarios_count = 0; 
     
     while (fgets(linha, sizeof(linha), f)) {
@@ -187,11 +321,12 @@ void carregar_usuarios() {
         
         Usuario u; memset(&u, 0, sizeof(Usuario));
         
-        char *parts[8] = {0};
+        // Agora temos 9 campos: nome|email|senha_hash|tipo|cursos|notas|aulas|alunos|feedback
+        char *parts[9] = {0};
         int idx = 0;
         char *current = linha; 
 
-        for (idx = 0; idx < 8; idx++) {
+        for (idx = 0; idx < 9; idx++) {
             char *next_sep = strchr(current, '|'); 
             
             if (next_sep) {
@@ -205,7 +340,7 @@ void carregar_usuarios() {
         }
         
         int part_count = idx + 1;
-        if (idx == 7 && part_count < 8) part_count = 8; 
+        if (idx == 8 && part_count < 9) part_count = 9; 
         
         if (part_count >= 4) { 
             strncpy(u.nome, parts[0], sizeof(u.nome)-1);
@@ -217,6 +352,7 @@ void carregar_usuarios() {
             if (part_count > 5 && parts[5]) strncpy(u.notas, parts[5], sizeof(u.notas)-1);
             if (part_count > 6 && parts[6]) strncpy(u.aulas, parts[6], sizeof(u.aulas)-1);
             if (part_count > 7 && parts[7]) strncpy(u.alunos, parts[7], sizeof(u.alunos)-1);
+            if (part_count > 8 && parts[8]) strncpy(u.feedback, parts[8], sizeof(u.feedback)-1); // NOVO CAMPO
             
             usuarios[usuarios_count++] = u;
         }
@@ -230,12 +366,13 @@ void salvar_usuarios() {
     if (!f) { printf("Erro ao salvar usuários.\n"); return; }
     for (size_t i=0;i<usuarios_count;i++) {
         Usuario *u = &usuarios[i];
-        fprintf(f, "%s|%s|%s|%s|%s|%s|%s|%s\n",
+        fprintf(f, "%s|%s|%s|%s|%s|%s|%s|%s|%s\n", // NOVO CAMPO %s
             u->nome, u->email, u->senha_hash, u->tipo,
             u->cursos[0] ? u->cursos : "",
             u->notas[0] ? u->notas : "",
             u->aulas[0] ? u->aulas : "",
-            u->alunos[0] ? u->alunos : "");
+            u->alunos[0] ? u->alunos : "",
+            u->feedback[0] ? u->feedback : ""); // NOVO CAMPO
     }
     fclose(f);
 }
@@ -266,243 +403,432 @@ int init_tentativas_arrays() {
     tentativa_tempo = (time_t*)malloc(sizeof(time_t) * MAX_TENTATIVAS_CAP);
     if (!tentativa_emails || !tentativa_cont || !tentativa_bloqueado || !tentativa_tempo) {
         free(tentativa_emails); free(tentativa_cont); free(tentativa_bloqueado); free(tentativa_tempo);
-        tentativa_emails = NULL; tentativa_cont = NULL; tentativa_bloqueado = NULL; tentativa_tempo = NULL;
         return 0;
     }
     for (size_t i=0;i<MAX_TENTATIVAS_CAP;i++) tentativa_emails[i] = NULL;
-    tentativas_count = 0;
     return 1;
 }
 
-/* (Login) Cria um registro de tentativa para um email (se não existir) */
-void garantir_tentativa(const char *email) {
-    if (!email) return;
-    if (!init_tentativas_arrays()) { printf("Erro ao inicializar tentativas (memória insuficiente).\n"); return; }
-    if (index_tentativa(email) >= 0) return;
-    if (tentativas_count >= (size_t)MAX_TENTATIVAS_CAP) {
-        printf("Limite de tentativa entries atingido; não será possível registrar nova tentativa para %s\n", email);
-        return;
-    }
-    tentativa_emails[tentativas_count] = xstrdup(email);
-    tentativa_cont[tentativas_count] = 0;
-    tentativa_bloqueado[tentativas_count] = 0;
-    tentativa_tempo[tentativas_count] = 0;
-    tentativas_count++;
-}
-
-/* (Login) Verifica se o email não está bloqueado por tempo */
-int pode_tentar_login(const char *email, int *tempo_restante) {
-    garantir_tentativa(email);
+/* (Login) Adiciona uma tentativa de login falha */
+void adicionar_tentativa(const char *email) {
     int idx = index_tentativa(email);
-    if (idx < 0) { *tempo_restante = 0; return 1; }
-    if (tentativa_bloqueado[idx]) {
-        time_t agora = time(NULL);
-        double diff = difftime(agora, tentativa_tempo[idx]);
-        if (diff < TEMPO_BLOQUEIO) { *tempo_restante = (int)(TEMPO_BLOQUEIO - diff); return 0; }
-        tentativa_cont[idx] = 0; tentativa_bloqueado[idx] = 0; tentativa_tempo[idx] = 0; *tempo_restante = 0; return 1;
+    if (idx == -1) {
+        if (tentativas_count >= MAX_TENTATIVAS_CAP) return; 
+        idx = tentativas_count++;
+        tentativa_emails[idx] = xstrdup(email);
+        tentativa_cont[idx] = 0;
+        tentativa_bloqueado[idx] = 0;
+        tentativa_tempo[idx] = 0;
     }
-    *tempo_restante = 0; return 1;
-}
-
-/* (Login) Registra uma senha errada e bloqueia se passar do limite */
-void registrar_tentativa_errada(const char *email) {
-    garantir_tentativa(email);
-    int idx = index_tentativa(email);
-    if (idx < 0) return;
+    
     tentativa_cont[idx]++;
-    if (tentativa_cont[idx] >= MAX_TENTATIVAS_CAP) { tentativa_bloqueado[idx] = 1; tentativa_tempo[idx] = time(NULL); }
+    if (tentativa_cont[idx] >= MAX_TENTATIVAS) {
+        tentativa_bloqueado[idx] = 1;
+        tentativa_tempo[idx] = time(NULL);
+        printf("Conta bloqueada por %d segundos devido a muitas tentativas de login.\n", TEMPO_BLOQUEIO);
+    }
 }
 
-/* (Login) Zera as tentativas após login com sucesso */
-void reset_tentativas(const char *email) {
-    garantir_tentativa(email);
+/* (Login) Verifica se o email está bloqueado */
+int esta_bloqueado(const char *email) {
     int idx = index_tentativa(email);
-    if (idx < 0) return;
-    tentativa_cont[idx] = 0; tentativa_bloqueado[idx] = 0; tentativa_tempo[idx] = 0;
-}
-
-/* --- Funções Utilitárias (manipulação de strings) --- */
-
-/* (Helper) Remove espaços em branco do início e fim de uma string */
-void trim(char *s) {
-    if (!s) return;
-    char *p = s; while (*p && isspace((unsigned char)*p)) p++;
-    if (p != s) memmove(s, p, strlen(p)+1);
-    size_t len = strlen(s); while (len>0 && isspace((unsigned char)s[len-1])) s[--len]=0;
-}
-
-/* (Helper) Validação simples de email (contém @ e .) */
-int validar_email(const char *email) { return (email && strchr(email, '@') && strchr(email, '.')) ? 1 : 0; }
-
-
-/* --- Funções de Manipulação de Dados do Usuário --- */
-
-/* (Helper) Verifica se um email está numa lista (string separada por ';') */
-int email_na_lista(const char *lista, const char *email) {
-    if (!lista || !*lista || !email) return 0;
-    char tmp[1024]; strncpy(tmp, lista, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
-    char *t = strtok(tmp, ";"); while (t) { if (strcasecmp(t, email)==0) return 1; t = strtok(NULL, ";"); } return 0;
-}
-
-/* (Helper) Adiciona um email na lista (string separada por ';') */
-void adicionar_email_na_lista(char *lista, size_t max_len, const char *email) {
-    if (!lista || !email) return;
-    if (email_na_lista(lista, email)) return;
-    size_t need = strlen(lista) + strlen(email) + 2; 
-    if (need > max_len) { printf("Espaço insuficiente para adicionar item.\n"); return; }
-    if (strlen(lista)) strcat(lista, ";");
-    strcat(lista, email);
-}
-
-/* (Helper) Adiciona um curso para o aluno (limite de 3) */
-void adicionar_curso_em_usuario(Usuario *al, const char *curso) {
-    if (!al || !curso) return;
-    int count = 0;
-    if (strlen(al->cursos)) { char tmp[512]; strcpy(tmp, al->cursos); char *t = strtok(tmp, ";"); while (t) { count++; t = strtok(NULL, ";"); } }
+    if (idx == -1 || !tentativa_bloqueado[idx]) return 0;
     
-    // Regra de negócio: Aluno só pode ter 3 cursos
-    if (count >= 3) { 
-        printf("Aluno já possui 3 cursos.\n"); 
-        return; 
+    time_t agora = time(NULL);
+    if (agora - tentativa_tempo[idx] >= TEMPO_BLOQUEIO) {
+        tentativa_bloqueado[idx] = 0;
+        tentativa_cont[idx] = 0;
+        tentativa_tempo[idx] = 0;
+        return 0;
     }
+    return 1;
+}
+
+/* (Login) Limpa o contador de tentativas após login bem-sucedido */
+void limpar_tentativas(const char *email) {
+    int idx = index_tentativa(email);
+    if (idx != -1) {
+        tentativa_cont[idx] = 0;
+        tentativa_bloqueado[idx] = 0;
+        tentativa_tempo[idx] = 0;
+    }
+}
+
+/* --- Funções de Cadastro e Login --- */
+
+/* (Cadastro) Cadastra um novo usuário */
+void cadastrar_usuario() {
+    if (usuarios_count >= MAX_USERS) { printf("Limite de usuários atingido.\n"); return; }
     
-    size_t need = strlen(al->cursos) + strlen(curso) + 2;
-    if (need > sizeof(al->cursos)) { printf("Espaço insuficiente para adicionar curso.\n"); return; }
-    if (strlen(al->cursos)) strcat(al->cursos, ";");
-    strcat(al->cursos, curso);
+    Usuario novo;
+    char senha[65];
+    char tipo_str[16];
+    
+    printf("=== Cadastro de Usuário ===\n");
+    
+    printf("Nome: "); if (!fgets(novo.nome, sizeof(novo.nome), stdin)) return; novo.nome[strcspn(novo.nome, "\n")] = 0; trim(novo.nome);
+    
+    printf("Email: "); if (!fgets(novo.email, sizeof(novo.email), stdin)) return; novo.email[strcspn(novo.email, "\n")] = 0; trim(novo.email);
+    for (char *p=novo.email; *p; ++p) *p = tolower(*p);
+    
+    if (encontrar_usuario_por_email(novo.email)) { printf("Erro: Email já cadastrado.\n"); return; }
+    
+    printf("Senha: "); if (!fgets(senha, sizeof(senha), stdin)) return; senha[strcspn(senha, "\n")] = 0; trim(senha);
+    if (strlen(senha) < 6) { printf("Erro: Senha muito curta (mínimo 6 caracteres).\n"); return; }
+    
+    printf("Tipo (aluno/professor): "); if (!fgets(tipo_str, sizeof(tipo_str), stdin)) return; tipo_str[strcspn(tipo_str, "\n")] = 0; trim(tipo_str);
+    for (char *p=tipo_str; *p; ++p) *p = tolower(*p);
+    
+    if (strcmp(tipo_str, "aluno") != 0 && strcmp(tipo_str, "professor") != 0) { printf("Erro: Tipo de usuário inválido.\n"); return; }
+    
+    strncpy(novo.tipo, tipo_str, sizeof(novo.tipo)-1);
+    sha256_string(senha, novo.senha_hash);
+    
+    // Inicializa campos de lista
+    novo.cursos[0] = '\0';
+    novo.notas[0] = '\0';
+    novo.aulas[0] = '\0';
+    novo.alunos[0] = '\0';
+    novo.feedback[0] = '\0'; // NOVO CAMPO
+    
+    usuarios[usuarios_count++] = novo;
+    salvar_usuarios();
+    printf("Usuário cadastrado com sucesso!\n");
 }
 
-/* (Helper) Adiciona ou atualiza a nota de um curso para o aluno */
-void adicionar_nota_em_usuario(Usuario *al, const char *curso, double nota) {
-    if (!al || !curso) return;
-    char entrada[256]; snprintf(entrada, sizeof(entrada), "%s:%.1f", curso, nota);
-    if (strlen(al->notas)) {
-        char tmp[1024]; strcpy(tmp, al->notas); char *p = strtok(tmp, ","); char novo[1024] = ""; int atualizado = 0;
-        while (p) {
-            char nome_curso[256]; double v;
-            if (sscanf(p, "%255[^:]:%lf", nome_curso, &v) == 2) {
-                if (strcasecmp(nome_curso, curso) == 0) {
-                    if (strlen(novo)) strcat(novo, ",");
-                        strcat(novo, entrada);
-                        atualizado = 1;
-                } else {
-                    if (strlen(novo)) strcat(novo, ",");
-                        strcat(novo, p);
-                }
-            }
-            p = strtok(NULL, ",");
-        }
-        if (atualizado) { strncpy(al->notas, novo, sizeof(al->notas)-1); return; }
-    }
-    size_t need = strlen(al->notas) + strlen(entrada) + 2;
-    if (need > sizeof(al->notas)) { printf("Espaço insuficiente para adicionar nota.\n"); return; }
-    if (strlen(al->notas)) strcat(al->notas, ",");
-    strcat(al->notas, entrada);
-}
-
-/* (Helper) Adiciona um link de aula para o aluno */
-void adicionar_aula_em_usuario(Usuario *al, const char *aula) {
-    if (!al || !aula) return;
-    size_t need = strlen(al->aulas) + strlen(aula) + 2;
-    if (need > sizeof(al->aulas)) { printf("Espaço insuficiente para adicionar aula.\n"); return; }
-    if (strlen(al->aulas)) strcat(al->aulas, ";");
-    strcat(al->aulas, aula);
-}
-
-
-/* --- Funções Principais (Telas do Sistema) --- */
-
-/* Função Principal: Login de Usuário */
-int login_usuario_index(char out_email[128]) {
-    carregar_usuarios();
-    char email[128], senha[128];
-    printf("\n=== Login ===\n");
+/* (Login) Tenta logar o usuário e retorna o índice no array de usuários ou -1 */
+int login_usuario_index(char *out_email) {
+    char email[128];
+    char senha[65];
+    char senha_hash[65];
+    
+    printf("=== Login ===\n");
+    
     printf("Email: "); if (!fgets(email, sizeof(email), stdin)) return -1; email[strcspn(email, "\n")] = 0; trim(email);
     for (char *p=email; *p; ++p) *p = tolower(*p);
     
-    int tempo_restante=0; 
-    if (!pode_tentar_login(email, &tempo_restante)) { 
-        printf("Conta bloqueada. Tente novamente em %d segundos.\n", tempo_restante); 
-        return -1; 
+    if (esta_bloqueado(email)) {
+        printf("Conta bloqueada. Tente novamente mais tarde.\n");
+        return -1;
     }
     
-    printf("Senha: "); if (!fgets(senha, sizeof(senha), stdin)) return -1; senha[strcspn(senha, "\n")] = 0;
+    printf("Senha: "); if (!fgets(senha, sizeof(senha), stdin)) return -1; senha[strcspn(senha, "\n")] = 0; trim(senha);
     
-    char hash[65]; sha256_string(senha, hash);
-
-    for (size_t i=0;i<usuarios_count;i++) {
-        if (strcasecmp(usuarios[i].email, email) == 0) {
-            if (strcmp(usuarios[i].senha_hash, hash) == 0) {
-                reset_tentativas(email);
-                printf("Bem-vindo(a) %s!\n\n", usuarios[i].nome);
-                if (out_email) strncpy(out_email, usuarios[i].email, 128);
-                return (int)i;
-            } else {
-                printf("Email ou senha incorretos.\n");
-                registrar_tentativa_errada(email);
-                return -1;
-            }
+    Usuario *u = encontrar_usuario_por_email(email);
+    
+    if (u) {
+        sha256_string(senha, senha_hash);
+        if (strcmp(u->senha_hash, senha_hash) == 0) {
+            limpar_tentativas(email);
+            strncpy(out_email, email, 127);
+            printf("Login bem-sucedido!\n");
+            return (int)(u - usuarios); // Retorna o índice
         }
     }
+    
+    adicionar_tentativa(email);
     printf("Email ou senha incorretos.\n");
-    registrar_tentativa_errada(email);
     return -1;
 }
 
-/* Função Principal: Cadastro de Usuário */
-void cadastrar_usuario() {
-    carregar_usuarios();
-    if (usuarios_count >= (size_t)MAX_USERS) { printf("Capacidade máxima de usuários atingida. Não é possível cadastrar mais.\n"); return; }
-    char nome[128], email[128], senha[128], tipo_buf[16];
-    printf("\n=== Cadastro ===\n");
-    printf("Nome: "); if (!fgets(nome, sizeof(nome), stdin)) return; nome[strcspn(nome, "\n")] = 0; trim(nome);
-    printf("Email: "); if (!fgets(email, sizeof(email), stdin)) return; email[strcspn(email, "\n")] = 0; trim(email);
-    for (char *p=email; *p; ++p) *p = tolower(*p);
-    if (!validar_email(email)) { printf("Email inválido.\n"); return; }
-    if (encontrar_usuario_por_email(email)) { printf("Email já cadastrado.\n"); return; }
-    printf("Senha: "); if (!fgets(senha, sizeof(senha), stdin)) return; senha[strcspn(senha, "\n")] = 0;
-    printf("Tipo (A = Aluno, P = Professor): "); if (!fgets(tipo_buf, sizeof(tipo_buf), stdin)) return; tipo_buf[strcspn(tipo_buf, "\n")] = 0; trim(tipo_buf);
-    char tipo_c = toupper((unsigned char)tipo_buf[0]); if (tipo_c != 'A' && tipo_c != 'P') { printf("Tipo inválido.\n"); return; }
+/* --- Funções de IA (Inteligência Artificial) --- */
 
-    Usuario u; memset(&u, 0, sizeof(Usuario)); strncpy(u.nome, nome, sizeof(u.nome)-1); strncpy(u.email, email, sizeof(u.email)-1);
-    char hash[65]; sha256_string(senha, hash); strncpy(u.senha_hash, hash, sizeof(u.senha_hash)-1);
-    strcpy(u.tipo, (tipo_c=='A')?"aluno":"professor");
+/* 
+ * IA 2: Recomendação de Cursos (Similaridade de Cosseno)
+ */
 
-    usuarios[usuarios_count++] = u;
-    salvar_usuarios();
-    printf("Cadastro realizado com sucesso!\n");
+// ... (Código da IA 2)
+
+/* 
+ * IA 3: Análise de Sentimento (Baseado em Léxico)
+ */
+
+// Estrutura para o Léxico
+typedef struct {
+    const char *palavra;
+    int pontuacao;
+} LexicoEntry;
+
+// Léxico simples (pode ser expandido)
+static const LexicoEntry lexico[] = {
+    {"excelente", 3}, {"otimo", 3}, {"boa", 2}, {"bom", 2}, {"gostei", 2},
+    {"claro", 1}, {"ajudou", 1}, {"facil", 1}, {"interessante", 1},
+    {"ruim", -3}, {"pessimo", -3}, {"nao gostei", -2}, {"dificil", -2},
+    {"confuso", -2}, {"tedioso", -1}, {"lento", -1}, {"problema", -1}
+};
+static const int lexico_size = sizeof(lexico) / sizeof(lexico[0]);
+
+// Função para classificar o sentimento
+// Retorna 1 para Positivo, 0 para Neutro, -1 para Negativo
+int analisar_sentimento(const char *texto) {
+    if (!texto || strlen(texto) == 0) return 0;
+    
+    char tmp[1024]; strncpy(tmp, texto, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = 0;
+    for (char *p = tmp; *p; ++p) *p = tolower(*p); // Converte para minúsculas
+    
+    int pontuacao_total = 0;
+    
+    // Tokenização simples (por espaço)
+    char *token = strtok(tmp, " ,.!?\n");
+    while (token != NULL) {
+        for (int i = 0; i < lexico_size; i++) {
+            if (strcmp(token, lexico[i].palavra) == 0) {
+                pontuacao_total += lexico[i].pontuacao;
+                break;
+            }
+        }
+        token = strtok(NULL, " ,.!?\n");
+    }
+    
+    if (pontuacao_total > 2) return 1;      // Positivo
+    else if (pontuacao_total < -2) return -1; // Negativo
+    else return 0;                          // Neutro
 }
 
-/* --- Menu do Aluno --- */
-void menu_aluno(const char *email_usuario) {
-    char opcao[8];
-    while (1) {
-        carregar_usuarios();
-        Usuario *usuario = encontrar_usuario_por_email(email_usuario);
-        if (!usuario) { printf("Usuário não encontrado (ou foi removido). Saindo do menu.\n"); return; }
+// Função de Regressão Logística Simplificada para Risco
 
-        printf("=== Menu Aluno ===\n1 - Ver informações\n2 - Ver cursos\n3 - Ver notas\n4 - Ver aulas\n0 - Sair\nEscolha uma opção: ");
-        if (!fgets(opcao, sizeof(opcao), stdin))
-        break;
-    trim(opcao);
-        if (strcmp(opcao, "1") == 0) printf("\nNome: %s\nEmail: %s\n\n", usuario->nome, usuario->email);
-        else if (strcmp(opcao, "2") == 0) {
-            if (strlen(usuario->cursos)) { char tmp[512]; strcpy(tmp, usuario->cursos); char *t = strtok(tmp, ";"); printf("\nSeus cursos:\n"); while (t) { printf("- %s\n", t); t = strtok(NULL, ";"); } printf("\n"); }
-            else printf("Você não está matriculado em nenhum curso.\n\n");
+// Estrutura auxiliar para armazenar o par Curso:Nota
+typedef struct {
+    char curso[128];
+    double nota;
+} CursoNota;
+
+// Função auxiliar para extrair todas as notas de um usuário em um array de CursoNota
+int extrair_notas(const Usuario *u, CursoNota *lista_notas, int max_notas) {
+    if (strlen(u->notas) == 0) return 0;
+    
+    char tmp[1024]; strncpy(tmp, u->notas, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = 0;
+    char *p = tmp;
+    char *next_token;
+    int count = 0;
+    
+    char *token = strtok_r(p, ",", &next_token);
+    while (token != NULL && count < max_notas) {
+        char *sep = strchr(token, ':');
+        if (sep) {
+            *sep = '\0';
+            strncpy(lista_notas[count].curso, token, sizeof(lista_notas[count].curso) - 1);
+            lista_notas[count].nota = atof(sep + 1);
+            count++;
         }
-        else if (strcmp(opcao, "3") == 0) {
-            if (strlen(usuario->notas)) { char tmp[1024]; strcpy(tmp, usuario->notas); char *t = strtok(tmp, ","); printf("\nSuas notas:\n"); while (t) { printf("%s\n", t); t = strtok(NULL, ","); } printf("\n"); }
-            else printf("Nenhuma nota registrada.\n\n");
+        token = strtok_r(NULL, ",", &next_token);
+    }
+    return count;
+}
+
+// Função de Similaridade de Cosseno (Simplificada para vetores de notas)
+// Compara dois alunos com base nas notas dos cursos que eles têm em comum.
+double calcular_similaridade_cosseno(const Usuario *u1, const Usuario *u2) {
+    CursoNota notas1[32]; int count1 = extrair_notas(u1, notas1, 32);
+    CursoNota notas2[32]; int count2 = extrair_notas(u2, notas2, 32);
+    
+    if (count1 == 0 || count2 == 0) return 0.0;
+    
+    double produto_escalar = 0.0;
+    double norma1_quadrada = 0.0;
+    double norma2_quadrada = 0.0;
+    
+    // 1. Calcular o Produto Escalar (apenas para cursos em comum)
+    for (int i = 0; i < count1; i++) {
+        for (int j = 0; j < count2; j++) {
+            if (strcasecmp(notas1[i].curso, notas2[j].curso) == 0) {
+                produto_escalar += notas1[i].nota * notas2[j].nota;
+            }
         }
-        else if (strcmp(opcao, "4") == 0) {
-            if (strlen(usuario->aulas)) { char tmp[512]; strcpy(tmp, usuario->aulas); char *t = strtok(tmp, ";"); printf("\nSuas aulas:\n"); while (t) { printf("- %s\n", t); t = strtok(NULL, ";"); } printf("\n"); }
-            else printf("Nenhuma aula cadastrada.\n\n");
+    }
+    
+    // 2. Calcular a Norma Quadrada de cada vetor (todos os cursos)
+    for (int i = 0; i < count1; i++) {
+        norma1_quadrada += notas1[i].nota * notas1[i].nota;
+    }
+    for (int j = 0; j < count2; j++) {
+        norma2_quadrada += notas2[j].nota * notas2[j].nota;
+    }
+    
+    // 3. Calcular a Similaridade de Cosseno
+    if (norma1_quadrada == 0.0 || norma2_quadrada == 0.0) return 0.0;
+    
+    return produto_escalar / (sqrt(norma1_quadrada) * sqrt(norma2_quadrada));
+}
+
+// Função principal de recomendação
+void recomendar_cursos(const Usuario *aluno) {
+    double max_similaridade = -1.0;
+    Usuario *aluno_similar = NULL;
+    
+    // 1. Encontrar o aluno mais similar
+    for (size_t i = 0; i < usuarios_count; i++) {
+        Usuario *outro = &usuarios[i];
+        
+        // Ignora o próprio aluno e professores
+        if (outro == aluno || strcmp(outro->tipo, "aluno") != 0) continue;
+        
+        double similaridade = calcular_similaridade_cosseno(aluno, outro);
+        
+        if (similaridade > max_similaridade) {
+            max_similaridade = similaridade;
+            aluno_similar = outro;
         }
-        else if (strcmp(opcao, "0") == 0) break; else printf("Opção inválida.\n");
+    }
+    
+    if (aluno_similar == NULL || max_similaridade <= 0.0) {
+        printf("Não foi possível encontrar um aluno similar para recomendação.\n");
+        return;
+    }
+    
+    printf("Aluno mais similar encontrado: %s (Similaridade: %.2f)\n", aluno_similar->nome, max_similaridade);
+    
+    // 2. Sugerir cursos que o aluno similar tem e o aluno atual não
+    char cursos_aluno[512]; strncpy(cursos_aluno, aluno->cursos, sizeof(cursos_aluno));
+    char cursos_similar[512]; strncpy(cursos_similar, aluno_similar->cursos, sizeof(cursos_similar));
+    
+    char *curso_similar = strtok(cursos_similar, ";");
+    int recomendacoes_count = 0;
+    
+    printf("\n=== Cursos Recomendados para %s ===\n", aluno->nome);
+    
+    while (curso_similar) {
+        // Verifica se o curso similar já está na lista do aluno atual
+        if (!email_na_lista(cursos_aluno, curso_similar)) { // Reutilizando email_na_lista para cursos
+            printf("- %s\n", curso_similar);
+            recomendacoes_count++;
+        }
+        curso_similar = strtok(NULL, ";");
+    }
+    
+    if (recomendacoes_count == 0) {
+        printf("Nenhuma recomendação nova encontrada com base no aluno similar.\n");
     }
 }
 
-/* --- Menu do Professor --- */
+// Função de Regressão Logística Simplificada para Risco
+
+/* 
+ * IA 1: Previsão de Risco de Reprovação (Regressão Logística Simplificada)
+ * O risco é inversamente proporcional à média das notas.
+ */
+
+// Função auxiliar para calcular a média das notas de um aluno
+double calcular_media_notas(const Usuario *u) {
+    if (strlen(u->notas) == 0) return 0.0;
+    
+    char tmp[1024]; strncpy(tmp, u->notas, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = 0;
+    char *p = tmp;
+    char *next_token;
+    double soma_notas = 0.0;
+    int count = 0;
+    
+    char *token = strtok_r(p, ",", &next_token);
+    while (token != NULL) {
+        char *sep = strchr(token, ':');
+        if (sep) {
+            double nota = atof(sep + 1);
+            soma_notas += nota;
+            count++;
+        }
+        token = strtok_r(NULL, ",", &next_token);
+    }
+    
+    return count > 0 ? soma_notas / count : 0.0;
+}
+
+// Função de Regressão Logística Simplificada para Risco
+// Mapeia a média das notas (0-10) para uma probabilidade de risco (0-100%)
+// Quanto maior a nota, menor o risco.
+double prever_risco_reprovacao(const Usuario *u) {
+    double media = calcular_media_notas(u);
+    
+    // Parâmetros do modelo (ajustáveis):
+    // O ideal é que a média 5.0 (metade) resulte em 50% de risco.
+    // Usamos uma transformação linear para 'z' onde z = a * media + b
+    // Se media=5, queremos z=0 (para sigmoid(0) = 0.5) -> 5a + b = 0 -> b = -5a
+    // Se media=0, queremos alto risco (ex: 95%) -> sigmoid(z) = 0.05 -> z aprox -3
+    // Se media=10, queremos baixo risco (ex: 5%) -> sigmoid(z) = 0.95 -> z aprox +3
+    
+    // Escolhendo a=0.6 e b=-3.0:
+    // media=5 -> z = 0.6*5 - 3.0 = 0.0 -> Risco = 1 - 0.5 = 50%
+    // media=0 -> z = -3.0 -> Risco = 1 - 0.047 = 95.3%
+    // media=10 -> z = 3.0 -> Risco = 1 - 0.953 = 4.7%
+    
+    const double a = 0.6;
+    const double b = -3.0;
+    
+    double z = a * media + b;
+    
+    // Função Sigmoide: P(sucesso) = 1 / (1 + e^-z)
+    double probabilidade_sucesso = 1.0 / (1.0 + exp(-z));
+    
+    // Risco de Reprovação = 1 - P(sucesso)
+    double risco = 1.0 - probabilidade_sucesso;
+    
+    return risco * 100.0; // Retorna em porcentagem
+}
+
+/* --- Funções de Menu --- */
+
+/* Menu do Aluno */
+void menu_aluno(const char *email_aluno) {
+    char opcao[8];
+    while (1) {
+        carregar_usuarios(); 
+        Usuario *aluno = encontrar_usuario_por_email(email_aluno);
+        if (!aluno) { printf("Usuário não encontrado (ou foi removido). Saindo do menu.\n"); return; }
+
+        printf("=== Menu Aluno ===\n1 - Ver minhas informações\n2 - Ver minhas notas\n3 - Receber Sugestões de Cursos (IA)\n4 - Deixar Feedback\n0 - Sair\nEscolha uma opção: ");
+        if (!fgets(opcao, sizeof(opcao), stdin))
+        break;
+        trim(opcao);
+        
+        /* Opção 1: Ver informações */
+        if (strcmp(opcao, "1") == 0) {
+            printf("\nNome: %s\nEmail: %s\nCursos: %s\nAulas: %s\n\n", aluno->nome, aluno->email, strlen(aluno->cursos)? aluno->cursos : "Nenhum", strlen(aluno->aulas)? aluno->aulas : "Nenhuma");
+        }
+        
+        /* Opção 2: Ver notas */
+        else if (strcmp(opcao, "2") == 0) {
+            printf("\n=== Minhas Notas ===\n");
+            if (strlen(aluno->notas)) { 
+                char ntmp[1024]; strcpy(ntmp, aluno->notas); 
+                char *p2 = strtok(ntmp, ","); 
+                while (p2) { 
+                    printf("  %s\n", p2); 
+                    p2 = strtok(NULL, ","); 
+                } 
+            }
+            else printf("  Nenhuma nota registrada.\n");
+            printf("\n");
+        }
+        
+        /* Opção 3: Receber Sugestões de Cursos (IA) - NOVO */
+        else if (strcmp(opcao, "3") == 0) {
+            printf("\n=== Recomendação de Cursos (IA) ===\n");
+            recomendar_cursos(aluno);
+            printf("\n");
+        }
+        
+        /* Opção 4: Deixar Feedback - NOVO */
+        else if (strcmp(opcao, "4") == 0) {
+            printf("\n=== Deixar Feedback ===\n");
+            printf("Digite seu feedback sobre o sistema ou um curso (máx. 1023 caracteres):\n");
+            char feedback_input[1024];
+            if (!fgets(feedback_input, sizeof(feedback_input), stdin)) continue;
+            feedback_input[strcspn(feedback_input, "\n")] = 0;
+            trim(feedback_input);
+            
+            strncpy(aluno->feedback, feedback_input, sizeof(aluno->feedback) - 1);
+            salvar_usuarios();
+            printf("Feedback registrado com sucesso!\n\n");
+        }
+        
+        /* Opção 0: Sair do menu do aluno */
+        else if (strcmp(opcao, "0") == 0) break; 
+        
+        /* Opção Inválida */
+        else printf("Opção inválida.\n");
+    }
+}
+
+/* Menu do Professor */
 void menu_professor(const char *email_prof) {
     char opcao[8];
     while (1) {
@@ -510,10 +836,10 @@ void menu_professor(const char *email_prof) {
         Usuario *professor = encontrar_usuario_por_email(email_prof);
         if (!professor) { printf("Usuário não encontrado (ou foi removido). Saindo do menu.\n"); return; }
 
-        printf("=== Menu Professor ===\n1 - Ver informações\n2 - Adicionar aluno\n3 - Adicionar curso para aluno\n4 - Adicionar nota para aluno\n5 - Adicionar aula para aluno\n6 - Ver alunos e dados\n0 - Sair\nEscolha uma opção: ");
+        printf("=== Menu Professor ===\n1 - Ver informações\n2 - Adicionar aluno\n3 - Adicionar curso para aluno\n4 - Adicionar nota para aluno\n5 - Adicionar aula para aluno\n6 - Ver alunos e dados\n7 - Previsão de Risco de Reprovação (IA)\n8 - Análise de Sentimento (IA)\n9 - Registrar Feedback para Aluno\n0 - Sair\nEscolha uma opção: ");
         if (!fgets(opcao, sizeof(opcao), stdin))
         break;
-    trim(opcao);
+        trim(opcao);
         
         /* Opção 1: Ver informações */
         if (strcmp(opcao, "1") == 0) printf("\nNome: %s\nEmail: %s\n\n", professor->nome, professor->email);
@@ -527,7 +853,7 @@ void menu_professor(const char *email_prof) {
                 adicionar_email_na_lista(professor->alunos, sizeof(professor->alunos), email_aluno);
                 salvar_usuarios(); 
                 printf("Aluno adicionado com sucesso!\n");
-            } else printf("Aluno não encontrado.\n");
+            } else printf("Aluno não encontrado ou não é um aluno.\n");
         }
         
         /* Opção 3: Adicionar curso para um aluno */
@@ -550,7 +876,7 @@ void menu_professor(const char *email_prof) {
             if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno não está na sua lista.\n"); continue; }
             
             Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno não encontrado.\n"); continue; }
-            if (!strlen(al->cursos)) { printf("Aluno não possui cursos.\n"); continue; }
+            if (!strlen(al->cursos)) { printf("Aluno não possui cursos. Adicione um curso primeiro.\n"); continue; }
             char tmp[512]; strcpy(tmp, al->cursos); char *lista[32]; int n=0; char *x = strtok(tmp, ";"); while (x && n<32) { lista[n++] = x; x = strtok(NULL, ";"); }
             
             for (int i=0;i<n;i++) {
@@ -559,7 +885,7 @@ void menu_professor(const char *email_prof) {
             
             char escolha[8]; printf("Escolha o número do curso para adicionar nota: "); if (!fgets(escolha, sizeof(escolha), stdin)) continue; trim(escolha); int idx = atoi(escolha); if (idx<1 || idx>n) { printf("Opção inválida.\n"); continue; }
             char nota_str[32]; printf("Digite a nota (0-10): "); if (!fgets(nota_str, sizeof(nota_str), stdin)) continue; nota_str[strcspn(nota_str, "\n")] = 0; trim(nota_str);
-            double nota = atof(nota_str); if (nota < 0.0 || nota > 10.0) { printf("Nota inválida.\n"); continue; }
+            double nota = atof(nota_str); if (nota < 0.0 || nota > 10.0) { printf("Nota inválida. Deve ser entre 0.0 e 10.0.\n"); continue; }
             adicionar_nota_em_usuario(al, lista[idx-1], nota); 
             salvar_usuarios(); 
             printf("Nota adicionada com sucesso!\n");
@@ -593,10 +919,71 @@ void menu_professor(const char *email_prof) {
                     if (strlen(al->notas)) { char ntmp[1024]; strcpy(ntmp, al->notas); char *p2 = strtok(ntmp, ","); while (p2) { printf("  %s\n", p2); p2 = strtok(NULL, ","); } }
                     else printf("  Nenhuma nota.\n");
                     printf("Aulas: %s\n", strlen(al->aulas)? al->aulas : "Nenhuma");
+                    printf("Feedback: %s\n", strlen(al->feedback)? al->feedback : "Nenhum");
                 } else printf("Aluno %s não encontrado.\n", t);
                 t = strtok(NULL, ";");
             }
             printf("\n");
+        }
+        
+        /* Opção 7: Previsão de Risco de Reprovação (IA) - NOVO */
+        else if (strcmp(opcao, "7") == 0) {
+            if (strlen(professor->alunos) == 0) { printf("Você não tem alunos adicionados.\n\n"); continue; }
+            printf("\n=== Previsão de Risco de Reprovação (IA) ===\n");
+            char tmp[1024]; strncpy(tmp, professor->alunos, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
+            char *t = strtok(tmp, ";");
+            while (t) {
+                Usuario *al = encontrar_usuario_por_email(t); 
+                if (al) {
+                    double risco = prever_risco_reprovacao(al);
+                    double media = calcular_media_notas(al);
+                    printf("Aluno: %s (Média: %.2f) -> Risco de Reprovação: %.2f%%\n", al->nome, media, risco);
+                }
+                t = strtok(NULL, ";");
+            }
+            printf("\n");
+        }
+        
+        /* Opção 8: Análise de Sentimento (IA) - NOVO */
+        else if (strcmp(opcao, "8") == 0) {
+            if (strlen(professor->alunos) == 0) { printf("Você não tem alunos adicionados.\n\n"); continue; }
+            printf("\n=== Análise de Sentimento de Feedback (IA) ===\n");
+            char tmp[1024]; strncpy(tmp, professor->alunos, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
+            char *t = strtok(tmp, ";");
+            while (t) {
+                Usuario *al = encontrar_usuario_por_email(t); 
+                if (al && strlen(al->feedback) > 0) {
+                    int sentimento = analisar_sentimento(al->feedback);
+                    const char *sentimento_str = "Neutro";
+                    if (sentimento > 0) sentimento_str = "Positivo";
+                    else if (sentimento < 0) sentimento_str = "Negativo";
+                    
+                    printf("Aluno: %s -> Sentimento do Feedback: %s\n", al->nome, sentimento_str);
+                } else if (al) {
+                    printf("Aluno: %s -> Sem feedback registrado.\n", al->nome);
+                }
+                t = strtok(NULL, ";");
+            }
+            printf("\n");
+        }
+        
+        /* Opção 9: Registrar Feedback para Aluno - NOVO */
+        else if (strcmp(opcao, "9") == 0) {
+            if (strlen(professor->alunos) == 0) { printf("Você não tem alunos adicionados.\n\n"); continue; }
+            char email_aluno[128]; printf("Digite o email do aluno para registrar feedback: "); if (!fgets(email_aluno, sizeof(email_aluno), stdin)) continue; email_aluno[strcspn(email_aluno, "\n")] = 0; trim(email_aluno); for (char *p=email_aluno; *p; ++p) *p = tolower(*p);
+            if (!email_na_lista(professor->alunos, email_aluno)) { printf("Aluno não está na sua lista.\n"); continue; }
+            
+            Usuario *al = encontrar_usuario_por_email(email_aluno); if (!al) { printf("Aluno não encontrado.\n"); continue; }
+            
+            printf("Digite o feedback para %s (máx. 1023 caracteres):\n", al->nome);
+            char feedback_input[1024];
+            if (!fgets(feedback_input, sizeof(feedback_input), stdin)) continue;
+            feedback_input[strcspn(feedback_input, "\n")] = 0;
+            trim(feedback_input);
+            
+            strncpy(al->feedback, feedback_input, sizeof(al->feedback) - 1);
+            salvar_usuarios();
+            printf("Feedback registrado para %s com sucesso!\n\n", al->nome);
         }
         
         /* Opção 0: Sair do menu do professor */
@@ -636,7 +1023,7 @@ void cleanup() {
 /* --- Função Principal (main) --- */
 
 int main() {
-    setlocale(LC_ALL, "portuguese"); // <--- ALTERAÇÃO FEITA AQUI
+    setlocale(LC_ALL, "portuguese"); 
 
     /* Inicializa as estruturas */
     if (!init_global_structs()) {
@@ -653,7 +1040,7 @@ int main() {
         printf("=== Sistema Acadêmico ===\n1 - Cadastrar\n2 - Login\n0 - Sair\nEscolha uma opção: ");
         if (!fgets(opcao, sizeof(opcao), stdin))
         break;
-    trim(opcao);
+        trim(opcao);
         
         if (strcmp(opcao, "1") == 0) cadastrar_usuario();
         else if (strcmp(opcao, "2") == 0) {
