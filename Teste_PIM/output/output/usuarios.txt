@@ -1,0 +1,5 @@
+Rogerio|rogerio12@gmail.com|8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92|professor||||matheusb12@gmail.com;savio12@gmail.com;jeferson12@gmail.com|
+Matheus Borges|matheusb12@gmail.com|8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92|aluno|Python;Linguagem C;Engenharia de Software Agil|Python:9,Linguagem C:8,Engenharia de Software Agil:9,00|https://www.youtube.com/cursoemvideo||Curso muito bom
+Savio|savio12@gmail.com|8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92|aluno|Python;Linguagem C;Engenharia de Software Agil;Linguagem C++|Python:7,Linguagem C:8,Engenharia de Software Agil:5,Linguagem C++:8,00|||Muito ruim
+Jeferson|jeferson12@gmail.com|8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92|aluno|Analise e Desenvolvimento de Projetos;Linguagem Java;Pyhton|Analise e Desenvolvimento de Projetos:7,Linguagem Java:9,Pyhton:4,00|https://www.youtube.com/cursoemvideo||Muito ruim
+Matheus|matheussantista54@gmail.com|969094452698f824bccb66dd909fde45d65fef13565609f523cb4267468baa40|aluno|||||
