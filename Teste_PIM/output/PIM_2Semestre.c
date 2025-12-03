@@ -7,9 +7,6 @@
 #include <locale.h>
 #include <math.h> 
 
-/* ========================================================================== */
-/* CORREÇÃO DE COMPATIBILIDADE (WINDOWS / MINGW)                */
-/* ========================================================================== */
 #ifdef _WIN32
     /* No Windows, strcasecmp chama-se _stricmp */
     #define strcasecmp _stricmp
@@ -601,10 +598,6 @@ int analisar_sentimento(const char *texto) {
     int pontuacao_total = 0;
     int inverter_proximo = 1; // 1 = normal, -1 = inverte o sentido
 
-    // Tokeniza por espaço e pontuação básica
-    // ATENÇÃO: Aqui usamos strtok porque analisar_sentimento pode ser chamado 
-    // dentro de outro loop. O ideal seria usar strtok_r aqui também, mas 
-    // vamos garantir que quem chama (menu_professor) use strtok_r no loop externo.
     char *token = strtok(tmp, " ,.!?;:\n");
     
     while (token != NULL) {
@@ -998,7 +991,6 @@ void menu_professor(const char *email_prof) {
             printf("\n=== Alunos e dados ===\n");
             char tmp[1024]; strncpy(tmp, professor->alunos, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
             
-            // CORREÇÃO: Usar strtok_r para não conflitar com outros strtoks
             char *saveptr = NULL;
             char *t = strtok_r(tmp, ";", &saveptr);
             while (t) {
@@ -1017,13 +1009,12 @@ void menu_professor(const char *email_prof) {
             printf("\n");
         }
         
-        /* Opção 7: Previsão de Risco de Reprovação (IA) - NOVO */
+        /* Opção 7: Previsão de Risco de Reprovação (IA) */
         else if (strcmp(opcao, "7") == 0) {
             if (strlen(professor->alunos) == 0) { printf("Você não tem alunos adicionados.\n\n"); continue; }
             printf("\n=== Previsão de Risco de Reprovação (IA) ===\n");
             char tmp[1024]; strncpy(tmp, professor->alunos, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
             
-            // CORREÇÃO: Usar strtok_r
             char *saveptr = NULL;
             char *t = strtok_r(tmp, ";", &saveptr);
             while (t) {
@@ -1038,13 +1029,12 @@ void menu_professor(const char *email_prof) {
             printf("\n");
         }
         
-        /* Opção 8: Análise de Sentimento (IA) - NOVO */
+        /* Opção 8: Análise de Sentimento (IA) */
         else if (strcmp(opcao, "8") == 0) {
             if (strlen(professor->alunos) == 0) { printf("Você não tem alunos adicionados.\n\n"); continue; }
             printf("\n=== Análise de Sentimento de Feedback (IA) ===\n");
             char tmp[1024]; strncpy(tmp, professor->alunos, sizeof(tmp)-1); tmp[sizeof(tmp)-1]=0;
             
-            // CORREÇÃO: Usar strtok_r para evitar conflito com strtok interno da IA
             char *saveptr = NULL;
             char *t = strtok_r(tmp, ";", &saveptr);
             while (t) {
@@ -1065,7 +1055,7 @@ void menu_professor(const char *email_prof) {
             printf("\n");
         }
         
-        /* Opção 9: Registrar Feedback para Aluno - NOVO */
+        /* Opção 9: Registrar Feedback para Aluno */
         else if (strcmp(opcao, "9") == 0) {
             if (strlen(professor->alunos) == 0) { printf("Você não tem alunos adicionados.\n\n"); continue; }
             char email_aluno[128]; printf("Digite o email do aluno para registrar feedback: "); if (!fgets(email_aluno, sizeof(email_aluno), stdin)) continue; email_aluno[strcspn(email_aluno, "\n")] = 0; trim(email_aluno); for (char *p=email_aluno; *p; ++p) *p = tolower(*p);
